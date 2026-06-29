@@ -1,0 +1,32 @@
+name: snail_running
+description: "A custom slow jogging app for Hong Jeong-pyo"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.2
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  flutter_tts: ^3.8.3
+  audioplayers: ^5.2.1
+  geolocator: ^10.1.0
+  sensors_plus: ^4.0.2
+  url_launcher: ^6.1.14
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/sounds/
