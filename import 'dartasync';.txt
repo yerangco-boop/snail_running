@@ -1,0 +1,1509 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as p;
+import 'package:url_launcher/url_launcher.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+  ]);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+  ));
+  runApp(const SnailRunningApp());
+}
+
+// ==========================================
+// THEMES & CONFIGURATION
+// ==========================================
+enum AppTheme { oledBlack, deepNavy, lightWhite }
+
+enum FocusMetric { time, distance, pace }
+
+class ThemeConfig {
+  final Color backgroundColor;
+  final Color primaryTextColor;
+  final Color secondaryTextColor;
+  final Color cardBackgroundColor;
+  final Color accentColor;
+  final Brightness brightness;
+
+  ThemeConfig({
+    required this.backgroundColor,
+    required this.primaryTextColor,
+    required this.secondaryTextColor,
+    required this.cardBackgroundColor,
+    required this.accentColor,
+    required this.brightness,
+  });
+
+  factory ThemeConfig.from(AppTheme theme) {
+    switch (theme) {
+      case AppTheme.oledBlack:
+        return ThemeConfig(
+          backgroundColor: const Color(0xFF000000),
+          primaryTextColor: const Color(0xFFFFFFFF),
+          secondaryTextColor: const Color(0xFF8E8E93),
+          cardBackgroundColor: const Color(0xFF1C1C1E),
+          accentColor: const Color(0xFF00FF66), // Snail Mint Green
+          brightness: Brightness.dark,
+        );
+      case AppTheme.deepNavy:
+        return ThemeConfig(
+          backgroundColor: const Color(0xFF0B0F19),
+          primaryTextColor: const Color(0xFFE2E8F0),
+          secondaryTextColor: const Color(0xFF94A3B8),
+          cardBackgroundColor: const Color(0xFF1E293B),
+          accentColor: const Color(0xFF38BDF8), // Electric Sky Blue
+          brightness: Brightness.dark,
+        );
+      case AppTheme.lightWhite:
+        return ThemeConfig(
+          backgroundColor: const Color(0xFFFFFFFF),
+          primaryTextColor: const Color(0xFF000000),
+          secondaryTextColor: const Color(0xFF636366),
+          cardBackgroundColor: const Color(0xFFF2F2F7),
+          accentColor: const Color(0xFF10B981), // Emerald Green
+          brightness: Brightness.light,
+        );
+    }
+  }
+}
+
+// ==========================================
+// SQLite DATABASE STRUCTURE
+// ==========================================
+class WorkoutRecord {
+  final int? id;
+  final String date; // ISO8601 String
+  final int durationSeconds;
+  final double distanceKm;
+  final String averagePace;
+  final int bpm;
+  final String painAreas; // e.g. "무릎,종아리" or "없음"
+  final int midfootMaintained; // 1 for Yes, 0 for No
+
+  WorkoutRecord({
+    this.id,
+    required this.date,
+    required this.durationSeconds,
+    required this.distanceKm,
+    required this.averagePace,
+    required this.bpm,
+    required this.painAreas,
+    required this.midfootMaintained,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'date': date,
+      'duration_seconds': durationSeconds,
+      'distance_km': distanceKm,
+      'average_pace': averagePace,
+      'bpm': bpm,
+      'pain_areas': painAreas,
+      'midfoot_maintained': midfootMaintained,
+    };
+  }
+
+  factory WorkoutRecord.fromMap(Map<String, dynamic> map) {
+    return WorkoutRecord(
+      id: map['id'],
+      date: map['date'],
+      durationSeconds: map['duration_seconds'],
+      distanceKm: map['distance_km'],
+      averagePace: map['average_pace'],
+      bpm: map['bpm'],
+      painAreas: map['pain_areas'] ?? '없음',
+      midfootMaintained: map['midfoot_maintained'] ?? 1,
+    );
+  }
+}
+
+class DatabaseHelper {
+  static final DatabaseHelper instance = DatabaseHelper._init();
+  static Database? _database;
+
+  DatabaseHelper._init();
+
+  Future<Database> get database async {
+    if (_database != null) return _database!;
+    _database = await _initDB('snail_running_db.db');
+    return _database!;
+  }
+
+  Future<Database> _initDB(String filePath) async {
+    final dbPath = await getDatabasesPath();
+    final path = p.join(dbPath, filePath);
+    return await openDatabase(
+      path,
+      version: 2,
+      onCreate: _createDB,
+      onUpgrade: _upgradeDB,
+    );
+  }
+
+  Future<void> _createDB(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE workout_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        duration_seconds INTEGER NOT NULL,
+        distance_km REAL NOT NULL,
+        average_pace TEXT NOT NULL,
+        bpm INTEGER NOT NULL,
+        pain_areas TEXT NOT NULL,
+        midfoot_maintained INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
+  }
+
+  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Add midfoot_maintained column if upgrading from v1
+      try {
+        await db.execute('ALTER TABLE workout_records ADD COLUMN midfoot_maintained INTEGER NOT NULL DEFAULT 1');
+      } catch (e) {
+        debugPrint("Column might already exist: $e");
+      }
+    }
+  }
+
+  Future<int> insertRecord(WorkoutRecord record) async {
+    final db = await instance.database;
+    return await db.insert('workout_records', record.toMap());
+  }
+
+  Future<List<WorkoutRecord>> fetchAllRecords() async {
+    final db = await instance.database;
+    final result = await db.query('workout_records', orderBy: 'date DESC');
+    return result.map((json) => WorkoutRecord.fromMap(json)).toList();
+  }
+
+  Future<int> clearAllRecords() async {
+    final db = await instance.database;
+    return await db.delete('workout_records');
+  }
+}
+
+// ==========================================
+// APP NAVIGATION ROOT
+// ==========================================
+class SnailRunningApp extends StatelessWidget {
+  const SnailRunningApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      title: '달팽이 러닝',
+      debugShowCheckedModeBanner: false,
+      home: NavigationScreen(),
+    );
+  }
+}
+
+class NavigationScreen extends StatefulWidget {
+  const NavigationScreen({super.key});
+
+  @override
+  State<NavigationScreen> createState() => _NavigationScreenState();
+}
+
+class _NavigationScreenState extends State<NavigationScreen> {
+  int _currentIndex = 0;
+  AppTheme _theme = AppTheme.oledBlack;
+
+  // Track key references to refresh pages
+  final GlobalKey<_HistoryStatsTabState> _historyKey = GlobalKey();
+
+  void _onThemeChanged(AppTheme newTheme) {
+    setState(() {
+      _theme = newTheme;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final config = ThemeConfig.from(_theme);
+    
+    final List<Widget> tabs = [
+      MainRunningTab(
+        config: config,
+        theme: _theme,
+        onThemeChanged: _onThemeChanged,
+        onRecordSaved: () {
+          // Refresh statistics
+          _historyKey.currentState?.loadRecords();
+        },
+      ),
+      HistoryStatsTab(
+        key: _historyKey,
+        config: config,
+      ),
+    ];
+
+    return Scaffold(
+      backgroundColor: config.backgroundColor,
+      body: tabs[_currentIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        backgroundColor: config.cardBackgroundColor,
+        selectedItemColor: config.accentColor,
+        unselectedItemColor: config.secondaryTextColor,
+        showUnselectedLabels: true,
+        type: BottomNavigationBarType.fixed,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.directions_run_rounded),
+            label: '러닝 가이드',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.bar_chart_rounded),
+            label: '기록 & 통계',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ==========================================
+// TAB 1: RUNNING GUIDE SCREEN
+// ==========================================
+class MainRunningTab extends StatefulWidget {
+  final ThemeConfig config;
+  final AppTheme theme;
+  final ValueChanged<AppTheme> onThemeChanged;
+  final VoidCallback onRecordSaved;
+
+  const MainRunningTab({
+    super.key,
+    required this.config,
+    required this.theme,
+    required this.onThemeChanged,
+    required this.onRecordSaved,
+  });
+
+  @override
+  State<MainRunningTab> createState() => _MainRunningTabState();
+}
+
+class _MainRunningTabState extends State<MainRunningTab> with SingleTickerProviderStateMixin {
+  // Timer & workout metrics
+  bool _isRunning = false;
+  bool _isPaused = false;
+  int _seconds = 0;
+  double _distanceKm = 0.0;
+  Timer? _workoutTimer;
+
+  // Metronome: 150 BPM (400ms interval)
+  bool _isMetronomeOn = false;
+  Timer? _metronomeTimer;
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
+  // Dynamic layout toggle
+  FocusMetric _focusMetric = FocusMetric.time;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+    );
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.25).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _workoutTimer?.cancel();
+    _metronomeTimer?.cancel();
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  void _startWorkout() {
+    setState(() {
+      _isRunning = true;
+      _isPaused = false;
+    });
+    _startMetronome();
+
+    _workoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {
+        _seconds++;
+        // Simulate a slow jog speed: ~8:00 min/km pace (~2.08 meters per second)
+        _distanceKm += 0.00208;
+      });
+    });
+  }
+
+  void _pauseWorkout() {
+    _workoutTimer?.cancel();
+    _stopMetronome();
+    setState(() {
+      _isPaused = true;
+    });
+  }
+
+  void _resumeWorkout() {
+    setState(() {
+      _isPaused = false;
+    });
+    _startWorkout();
+  }
+
+  void _startMetronome() {
+    _metronomeTimer?.cancel();
+    setState(() {
+      _isMetronomeOn = true;
+    });
+
+    _metronomeTimer = Timer.periodic(const Duration(milliseconds: 400), (timer) {
+      if (_isMetronomeOn) {
+        SystemSound.play(SystemSoundType.click);
+        _pulseController.forward().then((value) => _pulseController.reverse());
+      }
+    });
+  }
+
+  void _stopMetronome() {
+    _metronomeTimer?.cancel();
+    setState(() {
+      _isMetronomeOn = false;
+    });
+  }
+
+  void _showEndWorkoutDialog() {
+    // Generate statistics summary
+    final String runningTime = _formatTime(_seconds);
+    final String runningDistance = _distanceKm.toStringAsFixed(2);
+    final String runningPace = _getPace();
+
+    bool isMidfootChecked = true;
+    final List<String> painAreas = ['무릎', '종아리', '발목', '허리'];
+    final List<String> selectedPain = [];
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: widget.config.cardBackgroundColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              title: Text(
+                '🏁 오늘의 운동 종료 및 저장',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: widget.config.primaryTextColor,
+                ),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Summary Card
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: widget.config.backgroundColor.withOpacity(0.4),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: widget.config.secondaryTextColor.withOpacity(0.2)),
+                      ),
+                      child: Column(
+                        children: [
+                          _buildSummaryRow('운동 시간', runningTime),
+                          const Divider(height: 16, color: Colors.white12),
+                          _buildSummaryRow('이동 거리', '$runningDistance km'),
+                          const Divider(height: 16, color: Colors.white12),
+                          _buildSummaryRow('평균 페이스', runningPace),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Midfoot landing question
+                    Text(
+                      '🧘 미드풋 체크리스트',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: widget.config.primaryTextColor,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    CheckboxListTile(
+                      title: Text(
+                        '박사님 가이드대로 미드풋(발바닥 전체 착지)을 잘 유지했나요?',
+                        style: TextStyle(color: widget.config.primaryTextColor, fontSize: 13),
+                      ),
+                      value: isMidfootChecked,
+                      activeColor: widget.config.accentColor,
+                      checkColor: Colors.black,
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      onChanged: (val) {
+                        setDialogState(() {
+                          isMidfootChecked = val ?? false;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Pain questionnaire
+                    Text(
+                      '⚠️ 운동 중 통증이 발생한 부위가 있나요?',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: widget.config.primaryTextColor,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: painAreas.map((area) {
+                        final isSelected = selectedPain.contains(area);
+                        return FilterChip(
+                          label: Text(area),
+                          selected: isSelected,
+                          selectedColor: widget.config.accentColor.withOpacity(0.3),
+                          checkmarkColor: widget.config.primaryTextColor,
+                          labelStyle: TextStyle(
+                            color: isSelected ? widget.config.primaryTextColor : widget.config.secondaryTextColor,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          onSelected: (selected) {
+                            setDialogState(() {
+                              if (selected) {
+                                selectedPain.add(area);
+                              } else {
+                                selectedPain.remove(area);
+                              }
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('취소', style: TextStyle(color: widget.config.secondaryTextColor)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: widget.config.accentColor,
+                    foregroundColor: widget.config.brightness == Brightness.dark ? Colors.black : Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () async {
+                    // Save to DB
+                    final record = WorkoutRecord(
+                      date: DateTime.now().toIso8601String(),
+                      durationSeconds: _seconds,
+                      distanceKm: double.parse(_distanceKm.toStringAsFixed(2)),
+                      averagePace: runningPace,
+                      bpm: 150,
+                      painAreas: selectedPain.isEmpty ? '없음' : selectedPain.join(','),
+                      midfootMaintained: isMidfootChecked ? 1 : 0,
+                    );
+                    await DatabaseHelper.instance.insertRecord(record);
+                    
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('운동 기록이 성공적으로 저장되었습니다.')),
+                      );
+                    }
+
+                    // Reset State
+                    _workoutTimer?.cancel();
+                    _stopMetronome();
+                    setState(() {
+                      _isRunning = false;
+                      _isPaused = false;
+                      _seconds = 0;
+                      _distanceKm = 0.0;
+                    });
+
+                    // Trigger statistics tab update
+                    widget.onRecordSaved();
+
+                    // If pain exists, suggest stretching
+                    if (selectedPain.isNotEmpty) {
+                      _showPainRecoverySuggestion(selectedPain);
+                    }
+                  },
+                  child: const Text('기록 완료 및 저장', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showPainRecoverySuggestion(List<String> painAreas) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: widget.config.cardBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '📺 통증 맞춤 케어 스트레칭 가이드',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: widget.config.primaryTextColor,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '선택하신 통증 부위에 대한 김병곤 박사의 유튜브 스트레칭 가이드입니다.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: widget.config.secondaryTextColor),
+                ),
+                const SizedBox(height: 16),
+                ...painAreas.map((area) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: widget.config.accentColor.withOpacity(0.1),
+                        foregroundColor: widget.config.accentColor,
+                        side: BorderSide(color: widget.config.accentColor.withOpacity(0.3)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: () => _launchYouTubeStretching(area),
+                      icon: const Icon(Icons.play_circle_fill_rounded),
+                      label: Text('$area 스트레칭 가이드 영상 보기'),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('닫기', style: TextStyle(color: widget.config.secondaryTextColor)),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _launchYouTubeStretching(String area) async {
+    String query = '김병곤 $area 스트레칭';
+    final youtubeUri = Uri.parse('https://www.youtube.com/results?search_query=${Uri.encodeComponent(query)}');
+    if (await canLaunchUrl(youtubeUri)) {
+      await launchUrl(youtubeUri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Widget _buildSummaryRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(color: widget.config.secondaryTextColor, fontWeight: FontWeight.bold)),
+        Text(value, style: TextStyle(color: widget.config.primaryTextColor, fontWeight: FontWeight.w900, fontSize: 16)),
+      ],
+    );
+  }
+
+  String _formatTime(int totalSeconds) {
+    int hrs = totalSeconds ~/ 3600;
+    int mins = (totalSeconds % 3600) ~/ 60;
+    int secs = totalSeconds % 60;
+    String hrsStr = hrs > 0 ? '${hrs.toString().padLeft(2, '0')}:' : '';
+    return '$hrsStr${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+
+  String _getPace() {
+    if (_distanceKm == 0) return "--'--\"";
+    double minutes = (_seconds / 60.0) / _distanceKm;
+    int paceMin = minutes.floor();
+    int paceSec = ((minutes - paceMin) * 60).round();
+    return "$paceMin'${paceSec.toString().padLeft(2, '0')}\"";
+  }
+
+  Widget _buildInteractiveMetric({
+    required FocusMetric metricType,
+    required String title,
+    required String value,
+    required Color color,
+    required bool isFocused,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _focusMetric = metricType;
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOut,
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        decoration: BoxDecoration(
+          color: isFocused 
+              ? widget.config.accentColor.withOpacity(0.08)
+              : widget.config.cardBackgroundColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isFocused 
+                ? widget.config.accentColor.withOpacity(0.4)
+                : widget.config.secondaryTextColor.withOpacity(0.1),
+            width: isFocused ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                color: widget.config.secondaryTextColor,
+                letterSpacing: 1.5,
+              ),
+            ),
+            const SizedBox(height: 6),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: isFocused ? 90 : 36,
+                  fontWeight: FontWeight.w900,
+                  height: 1.1,
+                  color: color,
+                  fontFamily: 'sans-serif',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Current focused states
+    final String timeVal = _formatTime(_seconds);
+    final String distanceVal = _distanceKm.toStringAsFixed(2);
+    final String paceVal = _getPace();
+
+    return SafeArea(
+      child: Column(
+        children: [
+          // Theme Switcher & Metronome Status Bar
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Theme Toggle Dropdown
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: widget.config.cardBackgroundColor,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: widget.config.secondaryTextColor.withOpacity(0.2)),
+                  ),
+                  child: DropdownButton<AppTheme>(
+                    value: widget.theme,
+                    dropdownColor: widget.config.cardBackgroundColor,
+                    underline: const SizedBox(),
+                    icon: Icon(Icons.palette_outlined, color: widget.config.secondaryTextColor, size: 18),
+                    onChanged: (AppTheme? value) {
+                      if (value != null) {
+                        widget.onThemeChanged(value);
+                      }
+                    },
+                    items: const [
+                      DropdownMenuItem(
+                        value: AppTheme.oledBlack,
+                        child: Text('완전 검은색', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      ),
+                      DropdownMenuItem(
+                        value: AppTheme.deepNavy,
+                        child: Text('딥 네이비', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      ),
+                      DropdownMenuItem(
+                        value: AppTheme.lightWhite,
+                        child: Text('밝은 화이트', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Metronome Guide Pill
+                GestureDetector(
+                  onTap: () {
+                    if (_isMetronomeOn) {
+                      _stopMetronome();
+                    } else {
+                      _startMetronome();
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _isMetronomeOn 
+                        ? widget.config.accentColor.withOpacity(0.15) 
+                        : widget.config.secondaryTextColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: _isMetronomeOn 
+                          ? widget.config.accentColor 
+                          : widget.config.secondaryTextColor.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        ScaleTransition(
+                          scale: _pulseAnimation,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: _isMetronomeOn ? widget.config.accentColor : widget.config.secondaryTextColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '150 BPM',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                            color: _isMetronomeOn ? widget.config.accentColor : widget.config.primaryTextColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const Spacer(),
+
+          // 3. Interactive Metric Layout
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20.0),
+            child: Column(
+              children: [
+                // Top Promoted Display (100pt Extra-Large Display)
+                if (_focusMetric == FocusMetric.time)
+                  _buildInteractiveMetric(
+                    metricType: FocusMetric.time,
+                    title: '운동 시간',
+                    value: timeVal,
+                    color: widget.config.primaryTextColor,
+                    isFocused: true,
+                  )
+                else if (_focusMetric == FocusMetric.distance)
+                  _buildInteractiveMetric(
+                    metricType: FocusMetric.distance,
+                    title: '운동 거리 (km)',
+                    value: distanceVal,
+                    color: widget.config.accentColor,
+                    isFocused: true,
+                  )
+                else
+                  _buildInteractiveMetric(
+                    metricType: FocusMetric.pace,
+                    title: '현재 페이스',
+                    value: paceVal,
+                    color: widget.config.primaryTextColor,
+                    isFocused: true,
+                  ),
+                
+                const SizedBox(height: 20),
+
+                // Bottom Sub-metrics Row (Horizontal Layout)
+                Row(
+                  children: [
+                    if (_focusMetric != FocusMetric.time)
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                          child: _buildInteractiveMetric(
+                            metricType: FocusMetric.time,
+                            title: '시간',
+                            value: timeVal,
+                            color: widget.config.primaryTextColor,
+                            isFocused: false,
+                          ),
+                        ),
+                      ),
+                    if (_focusMetric != FocusMetric.distance)
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                          child: _buildInteractiveMetric(
+                            metricType: FocusMetric.distance,
+                            title: '거리 (km)',
+                            value: distanceVal,
+                            color: widget.config.accentColor,
+                            isFocused: false,
+                          ),
+                        ),
+                      ),
+                    if (_focusMetric != FocusMetric.pace)
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                          child: _buildInteractiveMetric(
+                            metricType: FocusMetric.pace,
+                            title: '페이스',
+                            value: paceVal,
+                            color: widget.config.primaryTextColor,
+                            isFocused: false,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const Spacer(),
+
+          // Metronome Beat Wave Simulator
+          if (_isMetronomeOn)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 40),
+              height: 10,
+              width: double.infinity,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(15, (index) {
+                  return ScaleTransition(
+                    scale: _pulseAnimation,
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      width: 5,
+                      height: 15,
+                      decoration: BoxDecoration(
+                        color: widget.config.accentColor.withOpacity((15 - index.toDouble()).abs() / 15.0),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+
+          const SizedBox(height: 20),
+
+          // Bottom Workout Lifecycle Action Panel
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: widget.config.cardBackgroundColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              border: Border.all(color: widget.config.secondaryTextColor.withOpacity(0.1)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!_isRunning && !_isPaused) ...[
+                  // Not Started state
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: widget.config.accentColor,
+                      foregroundColor: widget.config.brightness == Brightness.dark ? Colors.black : Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      minimumSize: const Size(double.infinity, 60),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      elevation: 0,
+                    ),
+                    onPressed: _startWorkout,
+                    icon: const Icon(Icons.play_arrow_rounded, size: 28),
+                    label: const Text(
+                      '슬로우 조깅 시작',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ] else if (_isRunning && !_isPaused) ...[
+                  // Active Workout state -> Show Pause Button
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.amber,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      minimumSize: const Size(double.infinity, 60),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      elevation: 0,
+                    ),
+                    onPressed: _pauseWorkout,
+                    icon: const Icon(Icons.pause_rounded, size: 28),
+                    label: const Text(
+                      '조깅 일시정지',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ] else if (_isPaused) ...[
+                  // Paused state -> Resume + End Workout and Save
+                  Row(
+                    children: [
+                      // Resume Button
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: widget.config.accentColor,
+                            foregroundColor: widget.config.brightness == Brightness.dark ? Colors.black : Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            elevation: 0,
+                          ),
+                          onPressed: _resumeWorkout,
+                          icon: const Icon(Icons.play_arrow_rounded, size: 24),
+                          label: const Text(
+                            '재개',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      
+                      // End and Save Button (Red Button)
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFF3B30), // Red
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            elevation: 0,
+                          ),
+                          onPressed: _showEndWorkoutDialog,
+                          icon: const Icon(Icons.stop_rounded, size: 24),
+                          label: const Text(
+                            '운동 종료 및 저장',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ==========================================
+// TAB 2: HISTORY & STATISTICS TAB
+// ==========================================
+class HistoryStatsTab extends StatefulWidget {
+  final ThemeConfig config;
+
+  const HistoryStatsTab({super.key, required this.config});
+
+  @override
+  State<HistoryStatsTab> createState() => _HistoryStatsTabState();
+}
+
+class _HistoryStatsTabState extends State<HistoryStatsTab> {
+  List<WorkoutRecord> _records = [];
+  bool _isLoading = true;
+  String _statsFilter = 'weekly'; // 'daily', 'weekly', 'monthly'
+
+  @override
+  void initState() {
+    super.initState();
+    loadRecords();
+  }
+
+  Future<void> loadRecords() async {
+    setState(() => _isLoading = true);
+    final data = await DatabaseHelper.instance.fetchAllRecords();
+    setState(() {
+      _records = data;
+      _isLoading = false;
+    });
+  }
+
+  // Calculate statistics grouping
+  Map<String, double> _calculateTimeStats() {
+    final now = DateTime.now();
+    Map<String, double> grouped = {};
+
+    for (var record in _records) {
+      final date = DateTime.tryParse(record.date) ?? now;
+      String key = '';
+      if (_statsFilter == 'daily') {
+        // Last 7 days individually
+        key = '${date.month}/${date.day}';
+        final diff = now.difference(date).inDays;
+        if (diff > 7) continue;
+      } else if (_statsFilter == 'weekly') {
+        // Weeks of this year
+        final weekNum = (date.difference(DateTime(date.year, 1, 1)).inDays / 7).ceil();
+        key = '${date.year}년 $weekNum주차';
+        final diff = now.difference(date).inDays;
+        if (diff > 35) continue; // limit to last 5 weeks
+      } else {
+        // Months
+        key = '${date.year}/${date.month}';
+        final diff = now.difference(date).inDays;
+        if (diff > 180) continue; // limit to 6 months
+      }
+
+      grouped[key] = (grouped[key] ?? 0.0) + (record.durationSeconds / 60.0); // minutes
+    }
+    return grouped;
+  }
+
+  // Pain analysis stats
+  Map<String, int> _calculatePainStats() {
+    Map<String, int> painCounts = {};
+    for (var record in _records) {
+      if (record.painAreas != '없음') {
+        final areas = record.painAreas.split(',');
+        for (var area in areas) {
+          if (area.trim().isNotEmpty) {
+            painCounts[area] = (painCounts[area] ?? 0) + 1;
+          }
+        }
+      }
+    }
+    return painCounts;
+  }
+
+  // Mock Google Sheets Sync Skeleton
+  Future<void> _syncToGoogleSheets() async {
+    // 1. Convert local database records to JSON
+    List<Map<String, dynamic>> payload = _records.map((r) => r.toMap()).toList();
+    
+    // 2. Mock Webhook/Apps Script URL
+    // (In production, replace with real Apps Script Deployment URL)
+    const String appsScriptUrl = 'https://script.google.com/macros/s/MOCK_DEPLOYMENT_ID/exec';
+
+    if (payload.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('동기화할 러닝 기록이 없습니다.')),
+      );
+      return;
+    }
+
+    try {
+      // Show loader
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('구글 시트와 연동/전송을 시작합니다...')),
+      );
+
+      // Create JSON payload
+      final jsonPayload = jsonEncode({
+        'sync_date': DateTime.now().toIso8601String(),
+        'records': payload,
+      });
+
+      debugPrint('--- GOOGLE SHEETS SYNC PAYLOAD ---');
+      debugPrint(jsonPayload);
+      debugPrint('----------------------------------');
+
+      // Dart Native HttpClient call simulation (skeleton)
+      // Since it's a mock endpoint, we handle a short timeout or mock response.
+      // Set to true to mock behavior to prevent HTTP connection crashes in test env
+      const bool isMock = true; 
+      if (!isMock) {
+        final client = HttpClient();
+        final request = await client.postUrl(Uri.parse(appsScriptUrl));
+        request.headers.set('content-type', 'application/json');
+        request.add(utf8.encode(jsonPayload));
+        final response = await request.close();
+        debugPrint('Response Status: ${response.statusCode}');
+      }
+
+      await Future.delayed(const Duration(seconds: 1)); // simulated network latency
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: widget.config.cardBackgroundColor,
+            title: const Text('✅ 구글 시트 동기화 완료 (뼈대)'),
+            content: const Text(
+              '디버그 콘솔에 JSON 동기화 데이터 페이로드가 정상 출력되었습니다.\n'
+              '실사용 시 Apps Script URL을 연동하시면 구글 시트에 자동으로 저장됩니다.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('확인', style: TextStyle(color: widget.config.accentColor)),
+              )
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('동기화 오류: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stats = _calculateTimeStats();
+    final painStats = _calculatePainStats();
+    final double maxStat = stats.isNotEmpty ? stats.values.reduce((a, b) => a > b ? a : b) : 1.0;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '📊 기록 및 통계',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: widget.config.primaryTextColor,
+                  ),
+                ),
+                
+                // Clear History Button
+                IconButton(
+                  icon: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        backgroundColor: widget.config.cardBackgroundColor,
+                        title: const Text('기록 초기화'),
+                        content: const Text('모든 운동 기록을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: Text('취소', style: TextStyle(color: widget.config.secondaryTextColor)),
+                          ),
+                          TextButton(
+                            onPressed: () async {
+                              await DatabaseHelper.instance.clearAllRecords();
+                              Navigator.pop(context);
+                              loadRecords();
+                            },
+                            child: const Text('삭제', style: TextStyle(color: Colors.redAccent)),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                )
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Statistics Filter Segmented Selector
+            Row(
+              children: [
+                _buildFilterButton('daily', '일별'),
+                const SizedBox(width: 8),
+                _buildFilterButton('weekly', '주별'),
+                const SizedBox(width: 8),
+                _buildFilterButton('monthly', '월별'),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Graph Display Card
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _records.isEmpty
+                      ? Center(
+                          child: Text(
+                            '누적된 러닝 기록이 없습니다.\n운동을 진행하고 기록을 저장해 보세요!',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: widget.config.secondaryTextColor),
+                          ),
+                        )
+                      : ListView(
+                          children: [
+                            // Custom Dynamic Bar Graph Card
+                            Card(
+                              color: widget.config.cardBackgroundColor,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                                side: BorderSide(color: widget.config.secondaryTextColor.withOpacity(0.1)),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '러닝 총 시간 (분)',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: widget.config.secondaryTextColor,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    ...stats.entries.map((entry) {
+                                      final double ratio = entry.value / maxStat;
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                        child: Row(
+                                          children: [
+                                            SizedBox(
+                                              width: 85,
+                                              child: Text(
+                                                entry.key,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: widget.config.primaryTextColor,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Stack(
+                                                children: [
+                                                  Container(
+                                                    height: 16,
+                                                    decoration: BoxDecoration(
+                                                      color: widget.config.backgroundColor.withOpacity(0.3),
+                                                      borderRadius: BorderRadius.circular(8),
+                                                    ),
+                                                  ),
+                                                  FractionallySizedBox(
+                                                    widthFactor: ratio.clamp(0.05, 1.0),
+                                                    child: Container(
+                                                      height: 16,
+                                                      decoration: BoxDecoration(
+                                                        color: widget.config.accentColor,
+                                                        borderRadius: BorderRadius.circular(8),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            SizedBox(
+                                              width: 45,
+                                              child: Text(
+                                                '${entry.value.toStringAsFixed(1)}분',
+                                                textAlign: TextAlign.end,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: widget.config.primaryTextColor,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Pain Distribution statistics card
+                            Card(
+                              color: widget.config.cardBackgroundColor,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                                side: BorderSide(color: widget.config.secondaryTextColor.withOpacity(0.1)),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '⚠️ 통증 발생 누적 통계',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: widget.config.secondaryTextColor,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    if (painStats.isEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                        child: Text(
+                                          '기록된 신체 부위 통증이 없습니다. 아주 훌륭한 러닝 습관입니다!',
+                                          style: TextStyle(fontSize: 12, color: widget.config.secondaryTextColor),
+                                        ),
+                                      )
+                                    else
+                                      ...painStats.entries.map((entry) {
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 6.0),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                '${entry.key} 통증',
+                                                style: TextStyle(color: widget.config.primaryTextColor, fontSize: 13),
+                                              ),
+                                              Text(
+                                                '${entry.value}회 발생',
+                                                style: TextStyle(
+                                                  color: widget.config.accentColor,
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            
+                            // History item listing
+                            const SizedBox(height: 12),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
+                              child: Text('최근 러닝 세션 상세 정보', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
+                            ),
+                            ..._records.map((record) {
+                              final dateObj = DateTime.tryParse(record.date) ?? DateTime.now();
+                              return Card(
+                                color: widget.config.cardBackgroundColor,
+                                margin: const EdgeInsets.only(bottom: 8),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                child: ListTile(
+                                  title: Text(
+                                    '${dateObj.year}년 ${dateObj.month}월 ${dateObj.day}일 러닝',
+                                    style: TextStyle(fontWeight: FontWeight.bold, color: widget.config.primaryTextColor, fontSize: 14),
+                                  ),
+                                  subtitle: Text(
+                                    '시간: ${record.durationSeconds ~/ 60}분 ${record.durationSeconds % 60}초 | 거리: ${record.distanceKm}km | 페이스: ${record.averagePace}\n'
+                                    '통증 부위: ${record.painAreas} | 미드풋: ${record.midfootMaintained == 1 ? "성공" : "미흡"}',
+                                    style: TextStyle(fontSize: 11, color: widget.config.secondaryTextColor),
+                                  ),
+                                  trailing: Icon(Icons.circle, color: record.midfootMaintained == 1 ? widget.config.accentColor : Colors.orangeAccent, size: 12),
+                                ),
+                              );
+                            }),
+                          ],
+                        ),
+            ),
+            
+            // Sync to Google Sheets bottom bar button
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16.0),
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: widget.config.cardBackgroundColor,
+                  foregroundColor: widget.config.primaryTextColor,
+                  side: BorderSide(color: widget.config.accentColor.withOpacity(0.3)),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: _syncToGoogleSheets,
+                icon: const Icon(Icons.cloud_upload_rounded),
+                label: const Text('구글 시트에 내 러닝 기록 동기화하기 (뼈대)', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterButton(String filterMode, String title) {
+    final bool isSelected = _statsFilter == filterMode;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _statsFilter = filterMode;
+          });
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSelected ? widget.config.accentColor : widget.config.cardBackgroundColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? widget.config.accentColor : widget.config.secondaryTextColor.withOpacity(0.2),
+            ),
+          ),
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: isSelected
+                  ? (widget.config.brightness == Brightness.dark ? Colors.black : Colors.white)
+                  : widget.config.primaryTextColor,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
