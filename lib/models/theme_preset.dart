@@ -46,7 +46,7 @@ const kThemePresets = <ThemePreset>[
   ThemePreset(
     name: '미드나잇 바이올렛',
     subtitle: 'Dark Space · Violet',
-    background: Color(0xFF05080F),
+    background: Color(0xFF0E0A20),   // 확실한 인디고 틴트
     surface:    Color(0xFF1A2840),   // 뚜렷한 스틸블루
     accent:     Color(0xFF8B5CF6),
     grey:       Color(0xFF8A8AB0),
@@ -62,7 +62,7 @@ const kThemePresets = <ThemePreset>[
   ThemePreset(
     name: '아크틱 블루',
     subtitle: 'Deep Ocean · Cyan',
-    background: Color(0xFF030C18),
+    background: Color(0xFF071828),   // 확실한 딥네이비 틴트
     surface:    Color(0xFF0C2E50),   // 뚜렷한 딥오션 블루
     accent:     Color(0xFF22D3EE),
     grey:       Color(0xFF6A8FA8),
@@ -78,7 +78,7 @@ const kThemePresets = <ThemePreset>[
   ThemePreset(
     name: '에메랄드 나이트',
     subtitle: 'Forest Black · Emerald',
-    background: Color(0xFF030D07),
+    background: Color(0xFF081C0C),   // 확실한 포레스트 틴트
     surface:    Color(0xFF0C2A18),   // 뚜렷한 포레스트그린
     accent:     Color(0xFF10B981),
     grey:       Color(0xFF5A8A70),
@@ -94,7 +94,7 @@ const kThemePresets = <ThemePreset>[
   ThemePreset(
     name: '로즈 골드',
     subtitle: 'Dark Crimson · Rose',
-    background: Color(0xFF0F0408),
+    background: Color(0xFF1E080E),   // 확실한 딥크림슨 틴트
     surface:    Color(0xFF2C0E18),   // 뚜렷한 다크크림슨
     accent:     Color(0xFFF43F5E),
     grey:       Color(0xFF8A6A72),
@@ -110,7 +110,7 @@ const kThemePresets = <ThemePreset>[
   ThemePreset(
     name: '앰버 프레스티지',
     subtitle: 'Dark Walnut · Gold',
-    background: Color(0xFF0A0600),
+    background: Color(0xFF1A0E00),   // 확실한 월넛 틴트
     surface:    Color(0xFF281500),   // 뚜렷한 월넛브라운
     accent:     Color(0xFFFBBF24),
     grey:       Color(0xFF8A7A50),

@@ -343,7 +343,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Row(
                     children: [
                       const Text(
-                        "슬로우 조깅",
+                        "달팽이 러닝",
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
