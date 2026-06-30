@@ -271,181 +271,121 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ┌────────────────────────────────────────────────────────┐
-  // │  1. 시작 전 화면 — 나이키 스타일 (지도 배경)            │
+  // │  1. 시작 전 화면 — 테마 배경색, 지도 없음               │
   // └────────────────────────────────────────────────────────┘
   Widget _buildPreRunScreen() {
     return Scaffold(
-      body: Stack(
-        children: [
-          // ── 배경: CartoDB 다크 지도 ──────────────────────────
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: _mapCenter,
-              initialZoom: 15.0,
-              interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-                userAgentPackageName: 'snail_running',
-              ),
-              if (_hasLocation)
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: _mapCenter,
-                      child: Container(
-                        width: 18,
-                        height: 18,
-                        decoration: BoxDecoration(
-                          color: _s.accent,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2.5),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _s.accent.withValues(alpha: 0.6),
-                              blurRadius: 10,
-                              spreadRadius: 3,
-                            ),
-                          ],
-                        ),
-                      ),
+      backgroundColor: _s.preset.background,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // 상단 바
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
+              child: Row(
+                children: [
+                  const Text(
+                    "달팽이 러닝",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                      letterSpacing: 0.5,
                     ),
-                  ],
-                ),
-            ],
-          ),
-
-          // ── 그라디언트 오버레이 (테마 배경색 기반) ─────────────
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  _s.preset.background.withValues(alpha: 0.82),
-                  _s.preset.background.withValues(alpha: 0.28),
-                  _s.preset.background.withValues(alpha: 0.96),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: widget.onGoToSettings,
+                    icon: const Icon(Icons.settings_outlined, color: Colors.white70, size: 26),
+                  ),
                 ],
-                stops: const [0.0, 0.45, 1.0],
               ),
             ),
-          ),
 
-          // ── UI 콘텐츠 ────────────────────────────────────────
-          SafeArea(
-            child: Column(
-              children: [
-                // 상단 바
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
-                  child: Row(
-                    children: [
-                      const Text(
-                        "달팽이 러닝",
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        onPressed: widget.onGoToSettings,
-                        icon: const Icon(Icons.settings_outlined, color: Colors.white70, size: 26),
-                      ),
-                    ],
-                  ),
-                ),
+            const Spacer(flex: 3),
 
-                const Spacer(flex: 3),
-
-                // 목표 표시 (탭하여 변경)
-                GestureDetector(
-                  onTap: _showGoalSheet,
-                  child: Column(
-                    children: [
-                      Text(
-                        _s.goalType == GoalType.distance ? '목표 거리' : '목표 시간',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Colors.white38,
-                          letterSpacing: 3,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _s.goalType == GoalType.distance
-                            ? _s.targetDistanceKm.toStringAsFixed(1)
-                            : '${_s.targetTimeMinutes}',
-                        style: const TextStyle(
-                          fontSize: 96,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          height: 1.0,
-                          letterSpacing: -4,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _s.goalType == GoalType.distance ? 'km' : '분',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          color: Colors.white54,
-                          letterSpacing: 6,
-                          fontWeight: FontWeight.w300,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white12),
-                        ),
-                        child: const Text(
-                          "탭하여 목표 변경",
-                          style: TextStyle(fontSize: 12, color: Colors.white38),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const Spacer(flex: 4),
-
-                // 시작 버튼 (큰 원형)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 52),
-                  child: GestureDetector(
-                    onTap: _startCountdown,
-                    child: Container(
-                      width: 88,
-                      height: 88,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.white30,
-                            blurRadius: 24,
-                            spreadRadius: 6,
-                          ),
-                        ],
-                      ),
-                      child: const Center(
-                        child: Icon(Icons.play_arrow_rounded, size: 52, color: Colors.black),
-                      ),
+            // 목표 표시 (탭하여 변경)
+            GestureDetector(
+              onTap: _showGoalSheet,
+              child: Column(
+                children: [
+                  Text(
+                    _s.goalType == GoalType.distance ? '목표 거리' : '목표 시간',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.white38,
+                      letterSpacing: 3,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 6),
+                  Text(
+                    _s.goalType == GoalType.distance
+                        ? _s.targetDistanceKm.toStringAsFixed(1)
+                        : '${_s.targetTimeMinutes}',
+                    style: const TextStyle(
+                      fontSize: 96,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      height: 1.0,
+                      letterSpacing: -4,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _s.goalType == GoalType.distance ? 'km' : '분',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      color: Colors.white54,
+                      letterSpacing: 6,
+                      fontWeight: FontWeight.w300,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: const Text(
+                      "탭하여 목표 변경",
+                      style: TextStyle(fontSize: 12, color: Colors.white38),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+
+            const Spacer(flex: 4),
+
+            // 시작 버튼 (큰 원형)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 52),
+              child: GestureDetector(
+                onTap: _startCountdown,
+                child: Container(
+                  width: 88,
+                  height: 88,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.white30,
+                        blurRadius: 24,
+                        spreadRadius: 6,
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.play_arrow_rounded, size: 52, color: Colors.black),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -496,86 +436,138 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ┌────────────────────────────────────────────────────────┐
-  // │  3. 주행 중 화면 — 나이키 스타일 (보라/네이비 배경)       │
+  // │  3. 주행 중 화면 — 지도 배경 + 테마 오버레이             │
   // └────────────────────────────────────────────────────────┘
   Widget _buildRunningScreen() {
     final isPaused = _workoutState == WorkoutState.paused;
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: _s.preset.runGradient,
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
+      body: Stack(
+        children: [
+          // ── 배경: 다크 지도 (주행 시작 후에만 렌더링) ───────
+          FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: _mapCenter,
+              initialZoom: 15.5,
+              interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
+            ),
             children: [
-              // ── 상단 메트릭 3개 ──────────────────────────────
-              _buildMetricsRow(),
-
-              Container(height: 1, color: _s.preset.divider),
-
-              // ── 중앙: 거리 (가장 크고 굵게) ──────────────────
-              Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (isPaused) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: _s.preset.accent.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                                color: _s.preset.accent.withValues(alpha: 0.35)),
-                          ),
-                          child: Text(
-                            "일시정지",
-                            style: TextStyle(
-                                color: _s.preset.accent,
-                                fontSize: 12,
-                                letterSpacing: 3),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                      ],
-                      Text(
-                        _distanceKm.toStringAsFixed(2),
-                        style: TextStyle(
-                          fontSize: 100,
-                          fontWeight: FontWeight.w800,
-                          color: _s.preset.onRun,
-                          letterSpacing: -5,
-                          height: 1.0,
+              TileLayer(
+                urlTemplate: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+                userAgentPackageName: 'snail_running',
+              ),
+              if (_hasLocation)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: _mapCenter,
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: _s.accent,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2.5),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _s.accent.withValues(alpha: 0.6),
+                              blurRadius: 10,
+                              spreadRadius: 3,
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'km',
-                        style: TextStyle(
-                          fontSize: 22,
-                          color: _s.preset.onRun.withValues(alpha: 0.3),
-                          letterSpacing: 10,
-                          fontWeight: FontWeight.w200,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ),
-
-              // ── 하단 컨트롤 ─────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.only(bottom: 56),
-                child: isPaused ? _buildPausedControls() : _buildRunningControl(),
-              ),
             ],
           ),
-        ),
+
+          // ── 테마 그라디언트 오버레이 (지도가 중앙에서 비침) ──
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  _s.preset.runGradient[0].withValues(alpha: 0.90),
+                  _s.preset.runGradient[1].withValues(alpha: 0.55),
+                  _s.preset.runGradient[2].withValues(alpha: 0.93),
+                ],
+                stops: const [0.0, 0.5, 1.0],
+              ),
+            ),
+          ),
+
+          // ── UI 콘텐츠 ────────────────────────────────────────
+          SafeArea(
+            child: Column(
+              children: [
+                // ── 상단 메트릭 3개 ──────────────────────────────
+                _buildMetricsRow(),
+
+                Container(height: 1, color: _s.preset.divider),
+
+                // ── 중앙: 거리 (가장 크고 굵게) ──────────────────
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (isPaused) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: _s.preset.accent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                  color: _s.preset.accent.withValues(alpha: 0.35)),
+                            ),
+                            child: Text(
+                              "일시정지",
+                              style: TextStyle(
+                                  color: _s.preset.accent,
+                                  fontSize: 12,
+                                  letterSpacing: 3),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+                        Text(
+                          _distanceKm.toStringAsFixed(2),
+                          style: TextStyle(
+                            fontSize: 100,
+                            fontWeight: FontWeight.w800,
+                            color: _s.preset.onRun,
+                            letterSpacing: -5,
+                            height: 1.0,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'km',
+                          style: TextStyle(
+                            fontSize: 22,
+                            color: _s.preset.onRun.withValues(alpha: 0.3),
+                            letterSpacing: 10,
+                            fontWeight: FontWeight.w200,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // ── 하단 컨트롤 ─────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 56),
+                  child: isPaused ? _buildPausedControls() : _buildRunningControl(),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
