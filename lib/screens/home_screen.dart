@@ -4,6 +4,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/app_settings.dart';
 import '../models/workout_record.dart';
 import '../services/metronome_service.dart';
@@ -160,6 +161,16 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  static const _stretchParts = ['종아리', '허벅지', '무릎', '허리', '발목'];
+
+  Future<void> _openStretchYoutube(List<String> parts) async {
+    final query = Uri.encodeComponent('김병곤 ${parts.join(' ')} 스트레칭');
+    final uri = Uri.parse('https://www.youtube.com/results?search_query=$query');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   void _resetWorkout() {
     setState(() {
       _distanceKm = 0.0;
@@ -214,29 +225,89 @@ class _HomeScreenState extends State<HomeScreen> {
     final dist = _distanceKm.toStringAsFixed(2);
     final time = _formattedTime;
     final pace = _avgPaceDisplay;
+    final selected = <String>{};
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        backgroundColor: _s.preset.surface,
-        title: const Text("운동 완료", style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _summaryRow("거리", "$dist km"),
-            _summaryRow("시간", time),
-            _summaryRow("평균 페이스", "$pace /km"),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          backgroundColor: _s.preset.surface,
+          title: const Text("운동 완료", style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _summaryRow("거리", "$dist km"),
+              _summaryRow("시간", time),
+              _summaryRow("평균 페이스", "$pace /km"),
+              const SizedBox(height: 20),
+              const Divider(color: Colors.white12),
+              const SizedBox(height: 12),
+              const Text(
+                "불편한 부위가 있나요?",
+                style: TextStyle(fontSize: 13, color: Colors.white54),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _stretchParts.map((part) {
+                  final on = selected.contains(part);
+                  return GestureDetector(
+                    onTap: () => setDlgState(() {
+                      if (on) { selected.remove(part); } else { selected.add(part); }
+                    }),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: on ? _s.accent : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: on ? _s.accent : Colors.white24),
+                      ),
+                      child: Text(
+                        part,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: on ? Colors.white : Colors.white54,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              if (selected.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: _s.accent),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () => _openStretchYoutube(selected.toList()),
+                    icon: Icon(Icons.play_circle_outline,
+                        size: 18, color: _s.accent),
+                    label: Text("김병곤 스트레칭 보기",
+                        style: TextStyle(color: _s.accent)),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _resetWorkout();
+              },
+              child: Text("확인", style: TextStyle(color: _s.accent, fontSize: 16)),
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _resetWorkout();
-            },
-            child: Text("확인", style: TextStyle(color: _s.accent, fontSize: 16)),
-          ),
-        ],
       ),
     );
   }
