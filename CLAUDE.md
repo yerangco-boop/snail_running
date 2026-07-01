@@ -76,6 +76,12 @@ OpenStreetMap via `flutter_map` + CartoDB dark tiles (`basemaps.cartocdn.com/dar
 - 작업 완료 후 반드시 `git commit` + `git push`
 - **버그 수정 전 반드시 근본 원인을 먼저 진단할 것** (증상만 보고 값을 임의로 바꾸지 말 것 — 예: "화면이 검게 보인다"면 색상값을 이것저것 바꿔보기 전에 실제 RGB/명도(luminance)를 계산해서 원인을 수치로 확인). 같은 문제를 2번 이상 고쳤는데도 재발하면, 추가로 값을 바꾸지 말고 사용자에게 "재발 중이며 별도 진단이 필요할 수 있다"고 알릴 것
 
+## 동기화 방법
+
+- 어느 컴퓨터든 세션 시작 시 가장 먼저 `git status && git pull origin main` 실행할 것.
+- 세션 종료 시 미완성 상태여도 반드시 commit + push할 것 (WIP 커밋 허용, 커밋 메시지에 "WIP:" 표시).
+- pull 시 충돌이 나면, 특별한 이유가 없는 한 더 최근에 push된 쪽(원격)을 우선 적용할 것.
+
 ## 다음 작업 목록
 
 - [ ] 스트레칭 유튜브 연동 (종료 다이얼로그 → `url_launcher`)
