@@ -8,7 +8,13 @@
       "PowerShell(flutter analyze *)",
       "PowerShell(dart analyze *)",
       "PowerShell(netstat *)",
-      "PowerShell(Get-Process *)"
+      "PowerShell(Get-Process *)",
+      "Bash(git -C \"C:/Users/JUNG WON DESK1/Documents/GitHub/snail_running\" diff lib/screens/home_screen.dart)",
+      "Bash(git -C \"C:/Users/JUNG WON DESK1/Documents/GitHub/snail_running\" add lib/screens/home_screen.dart)",
+      "Bash(git -C 'C:/Users/JUNG WON DESK1/Documents/GitHub/snail_running' commit -m ' *)",
+      "Bash(git -C \"C:/Users/JUNG WON DESK1/Documents/GitHub/snail_running\" add lib/services/database_service.dart lib/services/database_service_io.dart lib/services/database_service_web.dart)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)"
     ]
   }
 }
