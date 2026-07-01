@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Skill(run)",
-      "Bash(flutter run *)"
+      "Bash(flutter run *)",
+      "PowerShell(git pull *)",
+      "PowerShell(flutter pub *)",
+      "PowerShell(flutter analyze *)",
+      "PowerShell(dart analyze *)",
+      "PowerShell(netstat *)",
+      "PowerShell(Get-Process *)"
     ]
   }
 }
