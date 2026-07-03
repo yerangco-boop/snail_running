@@ -32,12 +32,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 28, 16, 32),
           children: [
-            const Padding(
-              padding: EdgeInsets.only(left: 8, bottom: 24),
+            Padding(
+              padding: const EdgeInsets.only(left: 8, bottom: 24),
               child: Text(
                 "설정",
                 style: TextStyle(
-                    fontSize: 30, fontWeight: FontWeight.bold, color: Colors.white),
+                    fontSize: 30, fontWeight: FontWeight.bold, color: _s.preset.onBackground),
               ),
             ),
 
@@ -49,8 +49,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.music_note_outlined,
               label: "메트로놈 BPM",
               trailing: Text("${_s.bpm} BPM",
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
+                  style: TextStyle(
+                      color: _s.preset.onSurface, fontWeight: FontWeight.bold)),
               onTap: _showBpmPicker,
             ),
             const SizedBox(height: 8),
@@ -59,8 +59,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.flag_outlined,
               label: "목표 거리",
               trailing: Text("${_s.targetDistanceKm.toStringAsFixed(1)} km",
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
+                  style: TextStyle(
+                      color: _s.preset.onSurface, fontWeight: FontWeight.bold)),
               onTap: _showDistancePicker,
             ),
             const SizedBox(height: 8),
@@ -70,8 +70,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               label: "목표 페이스",
               trailing: Text(
                 "${_s.paceMinutes}:${_s.paceSeconds.toString().padLeft(2, '0')} /km",
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    color: _s.preset.onSurface, fontWeight: FontWeight.bold),
               ),
               onTap: _showPacePicker,
             ),
@@ -159,7 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           color: preset.surface,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: isSelected ? accent : Colors.white.withValues(alpha: 0.07),
+            color: isSelected ? accent : preset.onSurface.withValues(alpha: 0.07),
             width: isSelected ? 2 : 1,
           ),
           boxShadow: isSelected
@@ -206,7 +206,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _dot(preset.background, 11),
                       const SizedBox(width: 4),
                       _dot(preset.surface.withValues(alpha: 0.5), 11,
-                          border: Colors.white.withValues(alpha: 0.25)),
+                          border: preset.onSurface.withValues(alpha: 0.25)),
                       const SizedBox(width: 4),
                       _dot(accent, 11),
                       const Spacer(),
@@ -233,7 +233,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: isSelected ? accent : Colors.white,
+                          color: isSelected ? accent : preset.onSurface,
                           height: 1.2,
                         ),
                       ),
@@ -350,7 +350,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     style: TextStyle(
                       fontWeight:
                           b == _s.bpm ? FontWeight.bold : FontWeight.normal,
-                      color: b == _s.bpm ? _accent : Colors.white,
+                      color: b == _s.bpm ? _accent : _s.preset.onSurface,
                       fontSize: 16,
                     ),
                   ),

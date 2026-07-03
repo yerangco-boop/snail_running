@@ -284,11 +284,11 @@ class _HomeScreenState extends State<HomeScreen> {
               _summaryRow("시간", time),
               _summaryRow("평균 페이스", "$pace /km"),
               const SizedBox(height: 20),
-              Divider(color: _s.preset.onBackground.withValues(alpha: 0.12)),
+              Divider(color: _s.preset.onSurface.withValues(alpha: 0.12)),
               const SizedBox(height: 12),
               Text(
                 "불편한 부위가 있나요?",
-                style: TextStyle(fontSize: 13, color: _s.preset.onBackground.withValues(alpha: 0.54)),
+                style: TextStyle(fontSize: 13, color: _s.preset.onSurface.withValues(alpha: 0.54)),
               ),
               const SizedBox(height: 10),
               Wrap(
@@ -307,13 +307,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: on ? _s.accent : Colors.transparent,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                            color: on ? _s.accent : _s.preset.onBackground.withValues(alpha: 0.24)),
+                            color: on ? _s.accent : _s.preset.onSurface.withValues(alpha: 0.24)),
                       ),
                       child: Text(
                         part,
                         style: TextStyle(
                           fontSize: 13,
-                          color: on ? Colors.white : _s.preset.onBackground.withValues(alpha: 0.54),
+                          color: on ? Colors.white : _s.preset.onSurface.withValues(alpha: 0.54),
                         ),
                       ),
                     ),
@@ -826,7 +826,7 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         Text(label, style: TextStyle(color: _s.preset.grey, fontSize: 15)),
         Text(value,
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: _s.preset.onBackground)),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: _s.preset.onSurface)),
       ],
     ),
   );
@@ -1058,7 +1058,7 @@ class _GoalSheetState extends State<_GoalSheet> {
         color: widget.settings.preset.surface,
         shape: BoxShape.circle,
       ),
-      child: Center(child: Icon(icon, color: widget.settings.preset.onBackground, size: 28)),
+      child: Center(child: Icon(icon, color: widget.settings.preset.onSurface, size: 28)),
     ),
   );
 }

@@ -34,6 +34,10 @@ class ThemePreset {
   Color get onBackground =>
       background.computeLuminance() > 0.3 ? const Color(0xFF1A1A1A) : Colors.white;
 
+  // surface 배경 위에 올라가는 텍스트/아이콘 색 (surface와 background의 밝기가 다를 수 있으므로 별도 계산)
+  Color get onSurface =>
+      surface.computeLuminance() > 0.3 ? const Color(0xFF1A1A1A) : Colors.white;
+
   Color get onRun =>
       runGradient[1].computeLuminance() > 0.3
           ? const Color(0xFF1A1A1A)
