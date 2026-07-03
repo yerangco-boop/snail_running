@@ -103,7 +103,12 @@ class _HomeScreenState extends State<HomeScreen> {
         if (wantMale && isMale) { match = v; break; }
         if (!wantMale && isFemale) { match = v; break; }
       }
-      match ??= koreanVoices.isNotEmpty ? koreanVoices.first : null;
+      // 성별이 이름에 명시되지 않은 경우, 더 자연스러운 음성(Google 계열)을 우선 사용
+      match ??= koreanVoices.firstWhere(
+        (v) => (v['name']?.toString() ?? '').toLowerCase().contains('google'),
+        orElse: () => koreanVoices.isNotEmpty ? koreanVoices.first : {},
+      );
+      if (match.isEmpty) match = null;
       if (match != null) {
         await _tts.setVoice({
           'name': match['name'].toString(),
