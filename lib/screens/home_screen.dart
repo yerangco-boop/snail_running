@@ -56,6 +56,10 @@ class _HomeScreenState extends State<HomeScreen> {
   LatLng _mapCenter = const LatLng(37.5665, 126.9780); // 서울 기본값
   bool _hasLocation = false;
 
+  StreamSubscription<Position>? _positionSub;
+  LatLng? _lastGpsPoint;
+  static const int _gpsAccuracyThresholdMeters = 25; // 이보다 부정확한 측위는 거리 누적에서 제외
+
   AppSettings get _s => widget.settings;
 
   String? _appliedTtsGender;
@@ -125,6 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _workoutTimer?.cancel();
     _countdownTimer?.cancel();
+    _positionSub?.cancel();
     _metronome.dispose();
     _mapController.dispose();
     super.dispose();
@@ -173,11 +178,51 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _doStartWorkout() {
+  Future<void> _doStartWorkout() async {
     setState(() => _workoutState = WorkoutState.running);
     _announceWorkoutStart();
     _metronome.start(_s.bpm);
+    _lastGpsPoint = null;
+    await _startGpsTracking();
     _launchTimer();
+  }
+
+  Future<void> _startGpsTracking() async {
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm != LocationPermission.always && perm != LocationPermission.whileInUse) return;
+
+      _positionSub?.cancel();
+      _positionSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 3,
+        ),
+      ).listen((pos) {
+        if (!mounted) return;
+        final point = LatLng(pos.latitude, pos.longitude);
+        if (pos.accuracy <= _gpsAccuracyThresholdMeters) {
+          if (_lastGpsPoint != null) {
+            final meters = Geolocator.distanceBetween(
+              _lastGpsPoint!.latitude, _lastGpsPoint!.longitude,
+              point.latitude, point.longitude,
+            );
+            setState(() {
+              _distanceKm += meters / 1000.0;
+              _checkAudioGuide();
+            });
+          }
+          _lastGpsPoint = point;
+        }
+        setState(() {
+          _mapCenter = point;
+          _hasLocation = true;
+        });
+      });
+    } catch (_) {}
   }
 
   void _announceWorkoutStart() {
@@ -191,6 +236,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void _pauseWorkout() {
     _workoutTimer?.cancel();
     _workoutTimer = null;
+    _positionSub?.cancel();
+    _positionSub = null;
     _metronome.stop();
     setState(() => _workoutState = WorkoutState.paused);
   }
@@ -198,12 +245,16 @@ class _HomeScreenState extends State<HomeScreen> {
   void _resumeWorkout() {
     setState(() => _workoutState = WorkoutState.running);
     _metronome.start(_s.bpm, playImmediately: false);
+    _lastGpsPoint = null;
+    _startGpsTracking();
     _launchTimer();
   }
 
   void _stopWorkout() {
     _workoutTimer?.cancel();
     _workoutTimer = null;
+    _positionSub?.cancel();
+    _positionSub = null;
     _metronome.stop();
     setState(() => _workoutState = WorkoutState.idle);
     _saveToDb();
@@ -224,12 +275,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _launchTimer() {
     _workoutTimer?.cancel();
     _workoutTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      setState(() {
-        _seconds++;
-        final paceInSec = _s.paceMinutes * 60.0 + _s.paceSeconds;
-        if (paceInSec > 0) _distanceKm += 1.0 / paceInSec;
-        _checkAudioGuide();
-      });
+      setState(() => _seconds++);
     });
   }
 

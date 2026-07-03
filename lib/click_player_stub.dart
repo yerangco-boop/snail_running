@@ -13,8 +13,8 @@ class ClickPlayer {
       ),
       android: AudioContextAndroid(
         audioFocus: AndroidAudioFocus.none,
-        contentType: AndroidContentType.sonification,
-        usageType: AndroidUsageType.assistanceSonification,
+        contentType: AndroidContentType.music,
+        usageType: AndroidUsageType.media,
         isSpeakerphoneOn: false,
         stayAwake: false,
       ),
