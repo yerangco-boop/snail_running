@@ -621,19 +621,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     Marker(
                       point: _mapCenter,
                       child: Container(
-                        width: 18,
-                        height: 18,
+                        width: 14,
+                        height: 14,
                         decoration: BoxDecoration(
                           color: _s.accent,
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2.5),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _s.accent.withValues(alpha: 0.6),
-                              blurRadius: 10,
-                              spreadRadius: 3,
-                            ),
-                          ],
+                          border: Border.all(color: Colors.white, width: 2),
                         ),
                       ),
                     ),
