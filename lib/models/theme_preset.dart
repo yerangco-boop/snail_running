@@ -38,6 +38,9 @@ class ThemePreset {
   Color get onSurface =>
       surface.computeLuminance() > 0.3 ? const Color(0xFF1A1A1A) : Colors.white;
 
+  // background 위에서 보조 텍스트로 쓰는 흐린 색 (고정된 grey 대신 배경 밝기에 맞춰 자동 대비)
+  Color get onBackgroundMuted => onBackground.withValues(alpha: 0.55);
+
   Color get onRun =>
       runGradient[1].computeLuminance() > 0.3
           ? const Color(0xFF1A1A1A)

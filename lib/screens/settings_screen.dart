@@ -275,7 +275,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           text,
           style: TextStyle(
             fontSize: 12,
-            color: _s.preset.grey,
+            color: _s.preset.onBackgroundMuted,
             letterSpacing: 1.2,
             fontWeight: FontWeight.w600,
           ),
