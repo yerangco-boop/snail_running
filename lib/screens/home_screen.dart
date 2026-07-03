@@ -153,8 +153,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _doStartWorkout() {
     setState(() => _workoutState = WorkoutState.running);
+    _announceWorkoutStart();
     _metronome.start(_s.bpm);
     _launchTimer();
+  }
+
+  void _announceWorkoutStart() {
+    final goalPart = _s.goalType == GoalType.distance
+        ? '목표 거리 ${_s.targetDistanceKm.toStringAsFixed(1)}킬로미터'
+        : '목표 시간 ${_s.targetTimeMinutes}분';
+    _tts.speak(
+        '$goalPart, 페이스 ${_s.paceMinutes}분 ${_s.paceSeconds}초로 슬로우 조깅을 시작합니다.');
   }
 
   void _pauseWorkout() {
