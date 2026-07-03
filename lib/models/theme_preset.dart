@@ -41,83 +41,83 @@ class ThemePreset {
 }
 
 const kThemePresets = <ThemePreset>[
-  // ── 1. 미드나잇 바이올렛 ─────────────────────────────────────────────────
-  // 보라빛 은하수. 블랙 배경 + 다크 스틸블루 카드 + 바이올렛 포인트.
+  // ── 1. 코랄 선샤인 ──────────────────────────────────────────────────────
+  // 흰 배경 + 발랄한 코랄 포인트.
   ThemePreset(
-    name: '미드나잇 바이올렛',
-    subtitle: 'Dark Space · Violet',
-    background: Color(0xFF0E0A20),   // 확실한 인디고 틴트
-    surface:    Color(0xFF1A2840),   // 뚜렷한 스틸블루
+    name: '코랄 선샤인',
+    subtitle: 'Bright Coral · Sunny',
+    background: Color(0xFFAB6A63),   // luminance ~20%
+    surface:    Color(0xFFFFF1EE),
+    accent:     Color(0xFFFF5A5F),
+    grey:       Color(0xFFA69691),
+    runGradient: [
+      Color(0xFFFFDAD1),
+      Color(0xFFFF7A59),
+      Color(0xFFFFB199),
+    ],
+  ),
+
+  // ── 2. 스카이 민트 ──────────────────────────────────────────────────────
+  // 흰 배경 + 상쾌한 민트/시안 포인트.
+  ThemePreset(
+    name: '스카이 민트',
+    subtitle: 'Fresh Mint · Cyan',
+    background: Color(0xFF3D8878),   // luminance ~20%
+    surface:    Color(0xFFE8FBF7),
+    accent:     Color(0xFF00BFA6),
+    grey:       Color(0xFF8FADAA),
+    runGradient: [
+      Color(0xFFCFF7EE),
+      Color(0xFF00BFA6),
+      Color(0xFF7FE0CF),
+    ],
+  ),
+
+  // ── 3. 레몬 스퀴즈 ──────────────────────────────────────────────────────
+  // 흰 배경 + 상큼한 레몬/라임 포인트.
+  ThemePreset(
+    name: '레몬 스퀴즈',
+    subtitle: 'Zesty Lemon · Lime',
+    background: Color(0xFF877C44),   // luminance ~20%
+    surface:    Color(0xFFFFFBEA),
+    accent:     Color(0xFFFFC933),
+    grey:       Color(0xFFABA383),
+    runGradient: [
+      Color(0xFFFFF3C4),
+      Color(0xFFFFC933),
+      Color(0xFFFFE28A),
+    ],
+  ),
+
+  // ── 4. 퍼플 팝 ──────────────────────────────────────────────────────────
+  // 흰 배경 + 발랄한 바이올렛 포인트.
+  ThemePreset(
+    name: '퍼플 팝',
+    subtitle: 'Playful Grape · Violet',
+    background: Color(0xFF8869D1),   // luminance ~20%
+    surface:    Color(0xFFF3EEFF),
     accent:     Color(0xFF8B5CF6),
-    grey:       Color(0xFF8A8AB0),
+    grey:       Color(0xFFA297B3),
     runGradient: [
-      Color(0xFF080215),
-      Color(0xFF140535),
-      Color(0xFF0E1035),
+      Color(0xFFE9DCFF),
+      Color(0xFF8B5CF6),
+      Color(0xFFC4A8FF),
     ],
   ),
 
-  // ── 2. 아크틱 블루 ──────────────────────────────────────────────────────
-  // 극지방의 빙하. 다크 네이비 배경 + 딥오션 카드 + 하늘빛 포인트.
+  // ── 5. 핫핑크 버스트 ────────────────────────────────────────────────────
+  // 흰 배경 + 에너지 넘치는 핫핑크 포인트.
   ThemePreset(
-    name: '아크틱 블루',
-    subtitle: 'Deep Ocean · Cyan',
-    background: Color(0xFF071828),   // 확실한 딥네이비 틴트
-    surface:    Color(0xFF0C2E50),   // 뚜렷한 딥오션 블루
-    accent:     Color(0xFF22D3EE),
-    grey:       Color(0xFF6A8FA8),
+    name: '핫핑크 버스트',
+    subtitle: 'Vivid Pink · Energy',
+    background: Color(0xFFC25784),   // luminance ~20%
+    surface:    Color(0xFFFFEFF5),
+    accent:     Color(0xFFFF3D81),
+    grey:       Color(0xFFB090A0),
     runGradient: [
-      Color(0xFF020810),
-      Color(0xFF051C30),
-      Color(0xFF041528),
-    ],
-  ),
-
-  // ── 3. 에메랄드 나이트 ──────────────────────────────────────────────────
-  // 밤의 숲. 거의 검은 배경 + 다크 포레스트 카드 + 에메랄드 포인트.
-  ThemePreset(
-    name: '에메랄드 나이트',
-    subtitle: 'Forest Black · Emerald',
-    background: Color(0xFF081C0C),   // 확실한 포레스트 틴트
-    surface:    Color(0xFF0C2A18),   // 뚜렷한 포레스트그린
-    accent:     Color(0xFF10B981),
-    grey:       Color(0xFF5A8A70),
-    runGradient: [
-      Color(0xFF020A04),
-      Color(0xFF051508),
-      Color(0xFF04130E),
-    ],
-  ),
-
-  // ── 4. 로즈 골드 ────────────────────────────────────────────────────────
-  // 딥 크림슨 럭셔리. 다크 와인 배경 + 크림슨 카드 + 로즈 포인트.
-  ThemePreset(
-    name: '로즈 골드',
-    subtitle: 'Dark Crimson · Rose',
-    background: Color(0xFF1E080E),   // 확실한 딥크림슨 틴트
-    surface:    Color(0xFF2C0E18),   // 뚜렷한 다크크림슨
-    accent:     Color(0xFFF43F5E),
-    grey:       Color(0xFF8A6A72),
-    runGradient: [
-      Color(0xFF0A0205),
-      Color(0xFF1A0510),
-      Color(0xFF160315),
-    ],
-  ),
-
-  // ── 5. 앰버 프레스티지 ──────────────────────────────────────────────────
-  // 위스키 & 월넛. 다크 앰버 배경 + 월넛 카드 + 골드 포인트.
-  ThemePreset(
-    name: '앰버 프레스티지',
-    subtitle: 'Dark Walnut · Gold',
-    background: Color(0xFF1A0E00),   // 확실한 월넛 틴트
-    surface:    Color(0xFF281500),   // 뚜렷한 월넛브라운
-    accent:     Color(0xFFFBBF24),
-    grey:       Color(0xFF8A7A50),
-    runGradient: [
-      Color(0xFF060300),
-      Color(0xFF140900),
-      Color(0xFF1C0C00),
+      Color(0xFFFFDCEA),
+      Color(0xFFFF3D81),
+      Color(0xFFFF8FBB),
     ],
   ),
 ];

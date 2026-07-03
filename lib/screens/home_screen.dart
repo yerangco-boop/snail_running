@@ -34,6 +34,14 @@ class _HomeScreenState extends State<HomeScreen> {
   int _seconds = 0;
   int _countdownValue = 3;
 
+  // 운동 중 중앙 큰 숫자 표시 모드: 0=거리, 1=시간, 2=BPM (탭할 때마다 순환)
+  int _mainDisplayMode = 0;
+  static const List<String> _mainDisplayLabels = ['km', '시간', 'BPM'];
+
+  void _cycleMainDisplay() {
+    setState(() => _mainDisplayMode = (_mainDisplayMode + 1) % _mainDisplayLabels.length);
+  }
+
   int _lastAnnouncedKm = 0;
   int _lapStartSeconds = 0;
   bool _halfAnnounced = false;
@@ -54,8 +62,41 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _tts.setLanguage("ko-KR");
+    _applyTtsVoice();
     _metronome.init();
     _fetchLocation();
+  }
+
+  // ttsVoiceGender 설정에 맞는 한국어 음성을 찾아 적용
+  Future<void> _applyTtsVoice() async {
+    try {
+      final voices = await _tts.getVoices;
+      final koreanVoices = (voices as List)
+          .whereType<Map>()
+          .where((v) => (v['locale']?.toString() ?? '').toLowerCase().startsWith('ko'))
+          .toList();
+      debugPrint('[TTS] 한국어 음성 목록: $koreanVoices');
+
+      final wantMale = _s.ttsVoiceGender == 'male';
+      Map? match;
+      for (final v in koreanVoices) {
+        final name = (v['name']?.toString() ?? '').toLowerCase();
+        final isMale = name.contains('male') && !name.contains('female');
+        final isFemale = name.contains('female');
+        if (wantMale && isMale) { match = v; break; }
+        if (!wantMale && isFemale) { match = v; break; }
+      }
+      match ??= koreanVoices.isNotEmpty ? koreanVoices.first : null;
+      if (match != null) {
+        await _tts.setVoice({
+          'name': match['name'].toString(),
+          'locale': match['locale'].toString(),
+        });
+        debugPrint('[TTS] 적용된 음성: ${match['name']} (${match['locale']})');
+      }
+    } catch (e) {
+      debugPrint('[TTS] 음성 설정 실패: $e');
+    }
   }
 
   @override
@@ -179,6 +220,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _lapStartSeconds = 0;
       _halfAnnounced = false;
       _goalAnnounced = false;
+      _mainDisplayMode = 0;
     });
   }
 
@@ -242,11 +284,11 @@ class _HomeScreenState extends State<HomeScreen> {
               _summaryRow("시간", time),
               _summaryRow("평균 페이스", "$pace /km"),
               const SizedBox(height: 20),
-              const Divider(color: Colors.white12),
+              Divider(color: _s.preset.onBackground.withValues(alpha: 0.12)),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 "불편한 부위가 있나요?",
-                style: TextStyle(fontSize: 13, color: Colors.white54),
+                style: TextStyle(fontSize: 13, color: _s.preset.onBackground.withValues(alpha: 0.54)),
               ),
               const SizedBox(height: 10),
               Wrap(
@@ -264,13 +306,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       decoration: BoxDecoration(
                         color: on ? _s.accent : Colors.transparent,
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: on ? _s.accent : Colors.white24),
+                        border: Border.all(
+                            color: on ? _s.accent : _s.preset.onBackground.withValues(alpha: 0.24)),
                       ),
                       child: Text(
                         part,
                         style: TextStyle(
                           fontSize: 13,
-                          color: on ? Colors.white : Colors.white54,
+                          color: on ? Colors.white : _s.preset.onBackground.withValues(alpha: 0.54),
                         ),
                       ),
                     ),
@@ -314,6 +357,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── 헬퍼 ─────────────────────────────────────────────────────────────────────
 
+  // 운동 중 중앙 큰 숫자에 표시할 값 (탭으로 순환되는 모드에 따라 결정)
+  String get _mainDisplayValue {
+    switch (_mainDisplayMode) {
+      case 1:
+        return _formattedTime;
+      case 2:
+        return '${_s.bpm}';
+      default:
+        return _distanceKm.toStringAsFixed(2);
+    }
+  }
+
   String get _formattedTime {
     final m = _seconds ~/ 60, s = _seconds % 60;
     return "${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
@@ -355,19 +410,20 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
               child: Row(
                 children: [
-                  const Text(
+                  Text(
                     "달팽이 러닝",
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                      color: _s.preset.onBackground,
                       letterSpacing: 0.5,
                     ),
                   ),
                   const Spacer(),
                   IconButton(
                     onPressed: widget.onGoToSettings,
-                    icon: const Icon(Icons.settings_outlined, color: Colors.white70, size: 26),
+                    icon: Icon(Icons.settings_outlined,
+                        color: _s.preset.onBackground.withValues(alpha: 0.7), size: 26),
                   ),
                 ],
               ),
@@ -382,9 +438,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     _s.goalType == GoalType.distance ? '목표 거리' : '목표 시간',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
-                      color: Colors.white38,
+                      color: _s.preset.onBackground.withValues(alpha: 0.38),
                       letterSpacing: 3,
                     ),
                   ),
@@ -393,10 +449,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     _s.goalType == GoalType.distance
                         ? _s.targetDistanceKm.toStringAsFixed(1)
                         : '${_s.targetTimeMinutes}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 96,
                       fontWeight: FontWeight.w800,
-                      color: Colors.white,
+                      color: _s.preset.onBackground,
                       height: 1.0,
                       letterSpacing: -4,
                     ),
@@ -404,9 +460,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 4),
                   Text(
                     _s.goalType == GoalType.distance ? 'km' : '분',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 20,
-                      color: Colors.white54,
+                      color: _s.preset.onBackground.withValues(alpha: 0.54),
                       letterSpacing: 6,
                       fontWeight: FontWeight.w300,
                     ),
@@ -415,13 +471,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
+                      color: _s.preset.onBackground.withValues(alpha: 0.06),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white12),
+                      border: Border.all(color: _s.preset.onBackground.withValues(alpha: 0.12)),
                     ),
-                    child: const Text(
+                    child: Text(
                       "탭하여 목표 변경",
-                      style: TextStyle(fontSize: 12, color: Colors.white38),
+                      style: TextStyle(fontSize: 12, color: _s.preset.onBackground.withValues(alpha: 0.38)),
                     ),
                   ),
                 ],
@@ -438,19 +494,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Container(
                   width: 88,
                   height: 88,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white,
+                    color: _s.accent,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.white30,
+                        color: _s.accent.withValues(alpha: 0.4),
                         blurRadius: 24,
                         spreadRadius: 6,
                       ),
                     ],
                   ),
                   child: const Center(
-                    child: Icon(Icons.play_arrow_rounded, size: 52, color: Colors.black),
+                    child: Icon(Icons.play_arrow_rounded, size: 52, color: Colors.white),
                   ),
                 ),
               ),
@@ -482,20 +538,20 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Text(
                 '$_countdownValue',
                 key: ValueKey(_countdownValue),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 200,
                   fontWeight: FontWeight.w900,
-                  color: Colors.white,
+                  color: _s.preset.onBackground,
                   height: 1.0,
                 ),
               ),
             ),
             const SizedBox(height: 36),
-            const Text(
+            Text(
               '준비...',
               style: TextStyle(
                 fontSize: 20,
-                color: Colors.white30,
+                color: _s.preset.onBackground.withValues(alpha: 0.3),
                 letterSpacing: 6,
                 fontWeight: FontWeight.w300,
               ),
@@ -525,7 +581,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+                urlTemplate: 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
                 userAgentPackageName: 'snail_running',
               ),
               if (_hasLocation)
@@ -605,24 +661,53 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           const SizedBox(height: 20),
                         ],
-                        Text(
-                          _distanceKm.toStringAsFixed(2),
-                          style: TextStyle(
-                            fontSize: 100,
-                            fontWeight: FontWeight.w800,
-                            color: _s.preset.onRun,
-                            letterSpacing: -5,
-                            height: 1.0,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'km',
-                          style: TextStyle(
-                            fontSize: 22,
-                            color: _s.preset.onRun.withValues(alpha: 0.3),
-                            letterSpacing: 10,
-                            fontWeight: FontWeight.w200,
+                        GestureDetector(
+                          onTap: _cycleMainDisplay,
+                          behavior: HitTestBehavior.opaque,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _mainDisplayValue,
+                                style: TextStyle(
+                                  fontSize: 100,
+                                  fontWeight: FontWeight.w800,
+                                  color: _s.preset.onRun,
+                                  letterSpacing: -5,
+                                  height: 1.0,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _mainDisplayLabels[_mainDisplayMode],
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  color: _s.preset.onRun.withValues(alpha: 0.3),
+                                  letterSpacing: 10,
+                                  fontWeight: FontWeight.w200,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              // 현재 표시 모드 인디케이터 (거리/시간/BPM 중 어디인지)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: List.generate(_mainDisplayLabels.length, (i) {
+                                  final active = i == _mainDisplayMode;
+                                  return AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                                    width: active ? 16 : 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: active
+                                          ? _s.preset.accent
+                                          : _s.preset.onRun.withValues(alpha: 0.25),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                  );
+                                }),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -685,13 +770,13 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         width: 80,
         height: 80,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white,
-          boxShadow: [BoxShadow(color: Colors.white12, blurRadius: 20, spreadRadius: 4)],
+          color: _s.accent,
+          boxShadow: [BoxShadow(color: _s.accent.withValues(alpha: 0.35), blurRadius: 20, spreadRadius: 4)],
         ),
         child: const Center(
-          child: Icon(Icons.pause_rounded, size: 42, color: Colors.black),
+          child: Icon(Icons.pause_rounded, size: 42, color: Colors.white),
         ),
       ),
     );
@@ -721,12 +806,12 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Container(
             width: 80,
             height: 80,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.white,
+              color: _s.accent,
             ),
             child: const Center(
-              child: Icon(Icons.play_arrow_rounded, size: 44, color: Colors.black),
+              child: Icon(Icons.play_arrow_rounded, size: 44, color: Colors.white),
             ),
           ),
         ),
@@ -741,7 +826,7 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         Text(label, style: TextStyle(color: _s.preset.grey, fontSize: 15)),
         Text(value,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: _s.preset.onBackground)),
       ],
     ),
   );
@@ -808,15 +893,16 @@ class _GoalSheetState extends State<_GoalSheet> {
           Container(
             width: 40, height: 4,
             decoration: BoxDecoration(
-              color: Colors.white12,
+              color: widget.settings.preset.onBackground.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
           const SizedBox(height: 24),
 
-          const Text(
+          Text(
             "목표 설정",
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+            style: TextStyle(
+                fontSize: 20, fontWeight: FontWeight.w700, color: widget.settings.preset.onBackground),
           ),
           const SizedBox(height: 24),
 
@@ -862,10 +948,10 @@ class _GoalSheetState extends State<_GoalSheet> {
                           : '$_timeMinutes',
                       key: ValueKey(
                           _goalType == GoalType.distance ? _distance : _timeMinutes),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 80,
                         fontWeight: FontWeight.w800,
-                        color: Colors.white,
+                        color: widget.settings.preset.onBackground,
                         height: 1.0,
                       ),
                     ),
@@ -972,7 +1058,7 @@ class _GoalSheetState extends State<_GoalSheet> {
         color: widget.settings.preset.surface,
         shape: BoxShape.circle,
       ),
-      child: Center(child: Icon(icon, color: Colors.white, size: 28)),
+      child: Center(child: Icon(icon, color: widget.settings.preset.onBackground, size: 28)),
     ),
   );
 }
