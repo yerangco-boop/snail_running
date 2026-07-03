@@ -42,7 +42,7 @@ class _MainScreenState extends State<MainScreen> {
             onSettingsChanged: widget.onSettingsChanged,
             onGoToSettings: _goToSettings,
           ),
-          HistoryScreen(key: _historyKey),
+          HistoryScreen(key: _historyKey, settings: _s),
           SettingsScreen(settings: _s, onChanged: widget.onSettingsChanged),
         ],
       ),

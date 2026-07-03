@@ -7,7 +7,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
+    statusBarIconBrightness: Brightness.dark,
   ));
   runApp(const SnailRunningApp());
 }
@@ -30,24 +30,25 @@ class _SnailRunningAppState extends State<SnailRunningApp> {
     final accent = p.accent;
     final grey = p.grey;
     final surface = p.surface;
+    final onSurface = p.onSurface;
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        brightness: Brightness.dark,
+        brightness: Brightness.light,
         scaffoldBackgroundColor: p.background,
-        colorScheme: ColorScheme.dark(
+        colorScheme: ColorScheme.light(
           surface: surface,
           primary: accent,
           secondary: accent,
           onPrimary: Colors.white,
-          onSurface: Colors.white,
+          onSurface: onSurface,
           outline: grey,
         ),
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          systemOverlayStyle: SystemUiOverlayStyle.light,
+          systemOverlayStyle: SystemUiOverlayStyle.dark,
         ),
         cardTheme: CardThemeData(
           color: surface,
