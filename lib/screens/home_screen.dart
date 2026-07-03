@@ -58,6 +58,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   AppSettings get _s => widget.settings;
 
+  String? _appliedTtsGender;
+
   @override
   void initState() {
     super.initState();
@@ -67,10 +69,24 @@ class _HomeScreenState extends State<HomeScreen> {
     _fetchLocation();
   }
 
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_appliedTtsGender != _s.ttsVoiceGender) {
+      _applyTtsVoice();
+    }
+  }
+
   // ttsVoiceGender 설정에 맞는 한국어 음성을 찾아 적용
   Future<void> _applyTtsVoice() async {
     try {
-      final voices = await _tts.getVoices;
+      // 크롬은 speechSynthesis 음성 목록을 비동기로 늦게 채우는 경우가 있어
+      // 빈 목록이 오면 잠깐 기다렸다가 다시 시도
+      var voices = await _tts.getVoices;
+      for (var i = 0; i < 5 && (voices as List).isEmpty; i++) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        voices = await _tts.getVoices;
+      }
       final koreanVoices = (voices as List)
           .whereType<Map>()
           .where((v) => (v['locale']?.toString() ?? '').toLowerCase().startsWith('ko'))
@@ -78,6 +94,7 @@ class _HomeScreenState extends State<HomeScreen> {
       debugPrint('[TTS] 한국어 음성 목록: $koreanVoices');
 
       final wantMale = _s.ttsVoiceGender == 'male';
+      _appliedTtsGender = _s.ttsVoiceGender;
       Map? match;
       for (final v in koreanVoices) {
         final name = (v['name']?.toString() ?? '').toLowerCase();
