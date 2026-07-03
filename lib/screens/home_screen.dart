@@ -257,8 +257,21 @@ class _HomeScreenState extends State<HomeScreen> {
     _positionSub = null;
     _metronome.stop();
     setState(() => _workoutState = WorkoutState.idle);
+    _announceWorkoutSummary();
     _saveToDb();
     _showSummaryDialog();
+  }
+
+  void _announceWorkoutSummary() {
+    final distStr = _distanceKm.toStringAsFixed(2);
+    final tm = _seconds ~/ 60, ts = _seconds % 60;
+    var paceStr = '';
+    if (_distanceKm >= 0.01) {
+      final avgSec = _seconds / _distanceKm;
+      final am = (avgSec ~/ 60).toInt(), asec = avgSec.toInt() % 60;
+      paceStr = ', 평균 페이스 $am분 $asec초';
+    }
+    _tts.speak('운동을 종료합니다. 총 거리 $distStr킬로미터, 총 시간 $tm분 $ts초$paceStr 였습니다.');
   }
 
   Future<void> _saveToDb() async {
