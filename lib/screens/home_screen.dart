@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/app_settings.dart';
 import '../models/workout_record.dart';
@@ -59,6 +61,14 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<Position>? _positionSub;
   LatLng? _lastGpsPoint;
   static const int _gpsAccuracyThresholdMeters = 25; // 이보다 부정확한 측위는 거리 누적에서 제외
+
+  // ── 케이던스(걸음수/분) — 가속도계 피크 감지 방식 ─────────────────────────
+  StreamSubscription<UserAccelerometerEvent>? _accelSub;
+  int _totalSteps = 0;
+  int _lapStepsAtLastKm = 0;
+  DateTime? _lastStepAt;
+  static const double _stepMagnitudeThreshold = 1.2; // m/s², 실기기 테스트 후 조정 필요할 수 있음
+  static const int _minStepIntervalMs = 250; // 분당 최대 240보 한도로 노이즈 중복 감지 방지
 
   AppSettings get _s => widget.settings;
 
@@ -130,6 +140,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _workoutTimer?.cancel();
     _countdownTimer?.cancel();
     _positionSub?.cancel();
+    _accelSub?.cancel();
     _metronome.dispose();
     _mapController.dispose();
     super.dispose();
@@ -184,7 +195,35 @@ class _HomeScreenState extends State<HomeScreen> {
     _metronome.start(_s.bpm);
     _lastGpsPoint = null;
     await _startGpsTracking();
+    _startStepDetection();
     _launchTimer();
+  }
+
+  void _startStepDetection() {
+    _accelSub?.cancel();
+    _lastStepAt = null;
+    _accelSub = userAccelerometerEventStream().listen((e) {
+      final mag = math.sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
+      final now = DateTime.now();
+      if (mag > _stepMagnitudeThreshold &&
+          (_lastStepAt == null ||
+              now.difference(_lastStepAt!).inMilliseconds > _minStepIntervalMs)) {
+        _lastStepAt = now;
+        _totalSteps++;
+      }
+    });
+  }
+
+  // lapSteps 이후의 시간(초) 동안의 케이던스(분당 걸음수)
+  int _cadenceSpm(int steps, int elapsedSeconds) {
+    if (elapsedSeconds <= 0) return 0;
+    return (steps / (elapsedSeconds / 60.0)).round();
+  }
+
+  String _fmtMinSec(num totalSeconds) {
+    final s = totalSeconds.toInt();
+    final m = s ~/ 60, sec = s % 60;
+    return '$m분 $sec초';
   }
 
   Future<void> _startGpsTracking() async {
@@ -238,6 +277,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _workoutTimer = null;
     _positionSub?.cancel();
     _positionSub = null;
+    _accelSub?.cancel();
+    _accelSub = null;
     _metronome.stop();
     setState(() => _workoutState = WorkoutState.paused);
   }
@@ -247,6 +288,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _metronome.start(_s.bpm, playImmediately: false);
     _lastGpsPoint = null;
     _startGpsTracking();
+    _startStepDetection();
     _launchTimer();
   }
 
@@ -255,6 +297,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _workoutTimer = null;
     _positionSub?.cancel();
     _positionSub = null;
+    _accelSub?.cancel();
+    _accelSub = null;
     _metronome.stop();
     setState(() => _workoutState = WorkoutState.idle);
     _announceWorkoutSummary();
@@ -263,15 +307,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _announceWorkoutSummary() {
-    final distStr = _distanceKm.toStringAsFixed(2);
-    final tm = _seconds ~/ 60, ts = _seconds % 60;
-    var paceStr = '';
-    if (_distanceKm >= 0.01) {
-      final avgSec = _seconds / _distanceKm;
-      final am = (avgSec ~/ 60).toInt(), asec = avgSec.toInt() % 60;
-      paceStr = ', 평균 페이스 $am분 $asec초';
-    }
-    _tts.speak('운동을 종료합니다. 총 거리 $distStr킬로미터, 총 시간 $tm분 $ts초$paceStr 였습니다.');
+    _tts.speak(_buildFullSummary(prefix: '운동을 종료합니다. '));
   }
 
   Future<void> _saveToDb() async {
@@ -311,6 +347,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _halfAnnounced = false;
       _goalAnnounced = false;
       _mainDisplayMode = 0;
+      _totalSteps = 0;
+      _lapStepsAtLastKm = 0;
+      _lastStepAt = null;
     });
   }
 
@@ -318,21 +357,41 @@ class _HomeScreenState extends State<HomeScreen> {
     final km = _distanceKm.floor();
     if (km > 0 && km > _lastAnnouncedKm) {
       final lapSec = _seconds - _lapStartSeconds;
+      final lapSteps = _totalSteps - _lapStepsAtLastKm;
       _lapStartSeconds = _seconds;
+      _lapStepsAtLastKm = _totalSteps;
       _lastAnnouncedKm = km;
-      final lm = lapSec ~/ 60, ls = lapSec % 60;
-      final avgSec = _seconds / _distanceKm;
-      final am = (avgSec ~/ 60).toInt(), asec = avgSec.toInt() % 60;
-      _tts.speak("$km킬로미터 도달. 구간 시간 $lm분 $ls초. 평균 페이스 $am분 $asec초.");
+      final cadence = _cadenceSpm(lapSteps, lapSec);
+      _tts.speak(
+        '$km킬로미터 지점입니다. '
+        '총 거리 ${_distanceKm.toStringAsFixed(2)}킬로미터, '
+        '총 시간 ${_fmtMinSec(_seconds)}, '
+        '이번 1킬로미터 구간 시간 ${_fmtMinSec(lapSec)}, '
+        '케이던스 분당 $cadence걸음.',
+      );
     }
     if (!_halfAnnounced && _distanceKm >= _s.targetDistanceKm * 0.5) {
       _halfAnnounced = true;
-      _tts.speak("목표의 절반을 지났습니다.");
+      _tts.speak(_buildFullSummary(
+        prefix: '목표의 절반인 ${(_s.targetDistanceKm / 2).toStringAsFixed(1)}킬로미터를 지났습니다. ',
+      ));
     }
     if (!_goalAnnounced && _distanceKm >= _s.targetDistanceKm) {
       _goalAnnounced = true;
-      _tts.speak("목표 거리에 도달했습니다. 운동은 계속됩니다.");
+      _tts.speak(_buildFullSummary(prefix: '목표 거리에 도달했습니다. 운동은 계속됩니다. '));
     }
+  }
+
+  // 누적 거리/시간/평균 페이스/평균 케이던스를 종합한 안내 문구
+  String _buildFullSummary({String prefix = ''}) {
+    final cadence = _cadenceSpm(_totalSteps, _seconds);
+    final paceStr = _distanceKm >= 0.01
+        ? ', 평균 페이스 ${_fmtMinSec(_seconds / _distanceKm)}'
+        : '';
+    return '$prefix'
+        '총 거리 ${_distanceKm.toStringAsFixed(2)}킬로미터, '
+        '총 시간 ${_fmtMinSec(_seconds)}$paceStr, '
+        '평균 케이던스 분당 $cadence걸음이었습니다.';
   }
 
   // ── 다이얼로그 ────────────────────────────────────────────────────────────────
