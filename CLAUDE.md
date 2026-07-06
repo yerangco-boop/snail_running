@@ -102,7 +102,7 @@ OpenStreetMap via `flutter_map` + CartoDB light tiles (`basemaps.cartocdn.com/li
 - [x] 스트레칭 유튜브 연동 (종료 다이얼로그 → `url_launcher`)
 - [x] GPS 기반 실거리 측정 (2026-07-03, 페이스 시뮬레이션에서 전환)
 - [x] 케이던스 실측 (가속도계 피크 감지, 2026-07-06) — 매 km/절반/목표/정지 시 음성 안내에 포함
-- [ ] 앱 아이콘 미설정 — 아직 Flutter 기본 아이콘 그대로. 사용자가 디자인 방향 정하면 진행 예정
+- [x] 앱 아이콘 (2026-07-06) — `flutter_launcher_icons`로 달팽이 캐릭터 아이콘 생성 (`assets/icon/icon.png`, `icon_foreground.png`), 코랄-핑크 그라디언트 배경 + 보라색 나선 껍질
 - [ ] "다른 오디오와 함께 재생" 토글이 UI에만 있고 실제 `ClickPlayer`/`AudioContextAndroid`에 연결 안 됨 (`AudioFocus.none`이 토글과 무관하게 항상 고정이라 꺼도 효과 없음). 다음 실외 테스트 후 케이던스 threshold 조정과 함께 한 커밋으로 처리 예정
 - [ ] GitHub Pages 주소에서 웹 빌드 동작 테스트
 - [ ] (참고) 실기기 테스트에서 TTS 남/여 음성이 실제로는 똑같이 나오는 경우 있음 — 기기의 한국어 TTS 음성 목록 자체에 성별 구분이 없는 환경 문제일 수 있어 실기기에서 재확인 필요
