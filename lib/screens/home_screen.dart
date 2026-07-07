@@ -128,19 +128,26 @@ class _HomeScreenState extends State<HomeScreen> {
       final placemarks =
           await placemarkFromCoordinates(_mapCenter.latitude, _mapCenter.longitude);
       if (placemarks.isEmpty || !mounted) return;
-      final p = placemarks.first;
-      final parts = [p.locality, p.subLocality]
-          .where((s) => s != null && s.isNotEmpty)
-          .cast<String>()
-          .toList();
-      setState(() {
-        _locationName = parts.isNotEmpty
-            ? parts.join(' ')
-            : (p.administrativeArea?.isNotEmpty == true ? p.administrativeArea : null);
-      });
+      setState(() => _locationName = _buildLocationName(placemarks.first));
     } catch (e) {
       debugPrint('[Geocode] 역지오코딩 실패: $e');
     }
+  }
+
+  // 시/동(subLocality)이 비어있는 기기가 있어, locality 기준으로 단계적으로
+  // 폴백해서 최대한 구체적인 지명을 구성 (예: "충주시 목행동", 안 되면 "충주시 OO로")
+  String? _buildLocationName(Placemark p) {
+    final locality = p.locality?.trim();
+    final subLocality = p.subLocality?.trim();
+    final thoroughfare = p.thoroughfare?.trim();
+    final admin = p.administrativeArea?.trim();
+
+    if (locality != null && locality.isNotEmpty) {
+      if (subLocality != null && subLocality.isNotEmpty) return '$locality $subLocality';
+      if (thoroughfare != null && thoroughfare.isNotEmpty) return '$locality $thoroughfare';
+      return locality;
+    }
+    return (admin != null && admin.isNotEmpty) ? admin : null;
   }
 
   @override
@@ -699,19 +706,34 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // 날씨 요약 (실제 위치 기준 — 지명을 함께 표시해 신뢰도 확인 가능)
+            // 지역 + 날씨 요약 (실제 위치 기준 — 지명을 함께 표시해 신뢰도 확인 가능)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
-              child: Text(
-                _weatherLoading
-                    ? '날씨 확인 중...'
-                    : (_weather != null
-                        ? '${_locationName ?? "위치 확인 중"} · ${_weather!.summaryText}'
-                        : '날씨 정보 없음'),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: _s.preset.onBackground.withValues(alpha: 0.45),
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _weatherLoading
+                        ? '위치 확인 중...'
+                        : (_locationName ?? '위치 정보 없음'),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: _s.preset.onBackground.withValues(alpha: 0.92),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _weatherLoading
+                        ? '날씨 확인 중...'
+                        : (_weather?.summaryText ?? '날씨 정보 없음'),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: _s.preset.onBackground.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
               ),
             ),
 

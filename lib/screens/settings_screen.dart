@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/app_settings.dart';
 
@@ -370,23 +371,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // 휠(스크롤) 형태의 숫자 선택 컬럼 — 타이핑 대신 돌려서 값을 고르는 방식
+  Widget _wheelColumn({
+    required int itemCount,
+    required int initialIndex,
+    required ValueChanged<int> onChanged,
+    required String Function(int index) label,
+  }) {
+    return CupertinoPicker(
+      backgroundColor: _surface,
+      scrollController: FixedExtentScrollController(initialItem: initialIndex),
+      itemExtent: 40,
+      onSelectedItemChanged: onChanged,
+      children: List.generate(
+        itemCount,
+        (i) => Center(
+          child: Text(label(i),
+              style: TextStyle(fontSize: 20, color: _s.preset.onSurface)),
+        ),
+      ),
+    );
+  }
+
   void _showWeightPicker() {
-    final ctrl = TextEditingController(text: _s.weightKg.toStringAsFixed(1));
+    const minKg = 30.0, maxKg = 150.0, step = 0.5;
+    final count = ((maxKg - minKg) / step).round() + 1;
+    var selectedIndex =
+        ((_s.weightKg - minKg) / step).round().clamp(0, count - 1);
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: _surface,
         title: const Text("체중 (kg)"),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          autofocus: true,
+        content: SizedBox(
+          height: 180,
+          child: _wheelColumn(
+            itemCount: count,
+            initialIndex: selectedIndex,
+            onChanged: (i) => selectedIndex = i,
+            label: (i) => '${(minKg + i * step).toStringAsFixed(1)} kg',
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () {
-              final v = double.tryParse(ctrl.text);
-              if (v != null && v > 0) _update(() => _s.weightKg = v);
+              _update(() => _s.weightKg = minKg + selectedIndex * step);
               Navigator.pop(context);
             },
             child: Text("확인", style: TextStyle(color: _accent)),
@@ -397,23 +426,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showDistancePicker() {
-    final ctrl =
-        TextEditingController(text: _s.targetDistanceKm.toStringAsFixed(1));
+    const minKm = 1.0, maxKm = 50.0, step = 0.1;
+    final count = ((maxKm - minKm) / step).round() + 1;
+    var selectedIndex =
+        ((_s.targetDistanceKm - minKm) / step).round().clamp(0, count - 1);
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: _surface,
         title: const Text("목표 거리 (km)"),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          autofocus: true,
+        content: SizedBox(
+          height: 180,
+          child: _wheelColumn(
+            itemCount: count,
+            initialIndex: selectedIndex,
+            onChanged: (i) => selectedIndex = i,
+            label: (i) => '${(minKm + i * step).toStringAsFixed(1)} km',
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () {
-              final v = double.tryParse(ctrl.text);
-              if (v != null && v > 0) _update(() => _s.targetDistanceKm = v);
+              _update(() => _s.targetDistanceKm = minKm + selectedIndex * step);
               Navigator.pop(context);
             },
             child: Text("확인", style: TextStyle(color: _accent)),
@@ -424,51 +458,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showPacePicker() {
-    final mCtrl = TextEditingController(text: '${_s.paceMinutes}');
-    final sCtrl =
-        TextEditingController(text: _s.paceSeconds.toString().padLeft(2, '0'));
+    var selectedMin = _s.paceMinutes.clamp(4, 20);
+    var selectedSec = _s.paceSeconds.clamp(0, 59);
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: _surface,
         title: const Text("페이스 설정 (분:초 /km)"),
-        content: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 64,
-              child: TextField(
-                controller: mCtrl,
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.center,
-                decoration: const InputDecoration(labelText: "분"),
+        content: SizedBox(
+          height: 180,
+          child: Row(
+            children: [
+              Expanded(
+                child: _wheelColumn(
+                  itemCount: 17, // 4~20분
+                  initialIndex: selectedMin - 4,
+                  onChanged: (i) => selectedMin = i + 4,
+                  label: (i) => '${i + 4}분',
+                ),
               ),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: Text(":", style: TextStyle(fontSize: 28)),
-            ),
-            SizedBox(
-              width: 64,
-              child: TextField(
-                controller: sCtrl,
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.center,
-                decoration: const InputDecoration(labelText: "초"),
+              Expanded(
+                child: _wheelColumn(
+                  itemCount: 60, // 0~59초
+                  initialIndex: selectedSec,
+                  onChanged: (i) => selectedSec = i,
+                  label: (i) => '${i.toString().padLeft(2, '0')}초',
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () {
-              final m =
-                  (int.tryParse(mCtrl.text) ?? _s.paceMinutes).clamp(4, 20);
-              final s =
-                  (int.tryParse(sCtrl.text) ?? _s.paceSeconds).clamp(0, 59);
               _update(() {
-                _s.paceMinutes = m;
-                _s.paceSeconds = s;
+                _s.paceMinutes = selectedMin;
+                _s.paceSeconds = selectedSec;
               });
               Navigator.pop(context);
             },
