@@ -5,6 +5,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/app_settings.dart';
@@ -102,6 +103,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _weatherLoading = true;
   WeatherSnapshot? _workoutStartWeather; // 운동 시작 시점 스냅샷 (기록 저장용)
 
+  // 날씨가 실제로 "지금 있는 위치" 기준인지 확인할 수 있도록 역지오코딩한 지명
+  String? _locationName;
+
   Future<void> _fetchWeather() async {
     setState(() => _weatherLoading = true);
     // 위치를 이미 구했다면(_fetchLocation 완료) 그 좌표를 그대로 사용 —
@@ -117,6 +121,28 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  // 좌표 → 지명(시/동) 역지오코딩. 웹/플랫폼 미지원이거나 실패하면 조용히 무시
+  Future<void> _reverseGeocode() async {
+    if (!_hasLocation) return;
+    try {
+      final placemarks =
+          await placemarkFromCoordinates(_mapCenter.latitude, _mapCenter.longitude);
+      if (placemarks.isEmpty || !mounted) return;
+      final p = placemarks.first;
+      final parts = [p.locality, p.subLocality]
+          .where((s) => s != null && s.isNotEmpty)
+          .cast<String>()
+          .toList();
+      setState(() {
+        _locationName = parts.isNotEmpty
+            ? parts.join(' ')
+            : (p.administrativeArea?.isNotEmpty == true ? p.administrativeArea : null);
+      });
+    } catch (e) {
+      debugPrint('[Geocode] 역지오코딩 실패: $e');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -126,7 +152,10 @@ class _HomeScreenState extends State<HomeScreen> {
     _metronome.init(mixWithOtherAudio: _s.mixWithOtherAudio);
     // 위치를 먼저 구한 뒤 그 좌표로 날씨를 조회 (위치 조회 실패해도 fetchLocation이
     // 내부에서 예외를 삼키므로 이어서 항상 폴백 좌표로 날씨 조회가 진행됨)
-    _fetchLocation().then((_) => _fetchWeather());
+    _fetchLocation().then((_) {
+      _reverseGeocode();
+      _fetchWeather();
+    });
   }
 
   @override
@@ -670,13 +699,15 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // 날씨 요약 (제주시 기준)
+            // 날씨 요약 (실제 위치 기준 — 지명을 함께 표시해 신뢰도 확인 가능)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
               child: Text(
                 _weatherLoading
                     ? '날씨 확인 중...'
-                    : (_weather?.summaryText ?? '날씨 정보 없음'),
+                    : (_weather != null
+                        ? '${_locationName ?? "위치 확인 중"} · ${_weather!.summaryText}'
+                        : '날씨 정보 없음'),
                 style: TextStyle(
                   fontSize: 12,
                   color: _s.preset.onBackground.withValues(alpha: 0.45),
