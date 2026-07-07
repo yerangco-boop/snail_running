@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'package:latlong2/latlong.dart';
+
 class WorkoutRecord {
   final int? id;
   final DateTime date;
@@ -9,6 +12,7 @@ class WorkoutRecord {
   final double? weatherTempC;
   final int? weatherHumidity;
   final int? weatherPrecipitationPercent;
+  final List<LatLng>? routePoints;
 
   const WorkoutRecord({
     this.id,
@@ -21,6 +25,7 @@ class WorkoutRecord {
     this.weatherTempC,
     this.weatherHumidity,
     this.weatherPrecipitationPercent,
+    this.routePoints,
   });
 
   Map<String, dynamic> toMap() => {
@@ -34,6 +39,9 @@ class WorkoutRecord {
     'weather_temp_c': weatherTempC,
     'weather_humidity': weatherHumidity,
     'weather_precipitation_percent': weatherPrecipitationPercent,
+    'route_json': (routePoints != null && routePoints!.isNotEmpty)
+        ? jsonEncode(routePoints!.map((p) => [p.latitude, p.longitude]).toList())
+        : null,
   };
 
   factory WorkoutRecord.fromMap(Map<String, dynamic> map) => WorkoutRecord(
@@ -48,7 +56,25 @@ class WorkoutRecord {
     weatherHumidity: (map['weather_humidity'] as num?)?.toInt(),
     weatherPrecipitationPercent:
         (map['weather_precipitation_percent'] as num?)?.toInt(),
+    routePoints: _parseRouteJson(map['route_json'] as String?),
   );
+
+  static List<LatLng>? _parseRouteJson(String? json) {
+    if (json == null || json.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(json) as List;
+      return decoded
+          .map((e) {
+            final pair = e as List;
+            return LatLng((pair[0] as num).toDouble(), (pair[1] as num).toDouble());
+          })
+          .toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool get hasRoute => routePoints != null && routePoints!.isNotEmpty;
 
   bool get hasWeather =>
       weatherTempC != null && weatherHumidity != null && weatherPrecipitationPercent != null;

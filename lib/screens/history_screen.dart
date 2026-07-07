@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/app_settings.dart';
 import '../models/workout_record.dart';
 import '../services/database_service.dart';
+import 'route_detail_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
   final AppSettings settings;
@@ -26,7 +27,11 @@ class HistoryScreenState extends State<HistoryScreen> {
     if (!mounted) return;
     setState(() => _loading = true);
     final records = await DatabaseService.instance.getWorkouts();
-    if (mounted) setState(() { _records = records; _loading = false; });
+    if (mounted)
+      setState(() {
+        _records = records;
+        _loading = false;
+      });
   }
 
   Future<void> _delete(int id) async {
@@ -69,10 +74,8 @@ class HistoryScreenState extends State<HistoryScreen> {
                 ],
               ),
             ),
-
             if (!_loading && _records.isNotEmpty)
               _buildSummaryRow(accent, surface, grey),
-
             Expanded(
               child: _loading
                   ? Center(child: CircularProgressIndicator(color: accent))
@@ -98,7 +101,8 @@ class HistoryScreenState extends State<HistoryScreen> {
     final avgPace = totalSec > 0 && totalKm > 0.01 ? totalSec / totalKm : 0.0;
     final avgM = (avgPace ~/ 60).toInt();
     final avgS = avgPace.toInt() % 60;
-    final dividerColor = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12);
+    final dividerColor =
+        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 4, 16, 16),
@@ -110,7 +114,8 @@ class HistoryScreenState extends State<HistoryScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _summaryItem("총 거리", "${totalKm.toStringAsFixed(1)} km", accent, grey),
+          _summaryItem(
+              "총 거리", "${totalKm.toStringAsFixed(1)} km", accent, grey),
           Container(width: 1, height: 28, color: dividerColor),
           _summaryItem("총 시간", _fmtSec(totalSec), accent, grey),
           Container(width: 1, height: 28, color: dividerColor),
@@ -178,84 +183,100 @@ class HistoryScreenState extends State<HistoryScreen> {
       onDismissed: (_) {
         if (record.id != null) _delete(record.id!);
       },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: surface,
-          borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => RouteDetailScreen(
+              settings: widget.settings,
+              record: record,
+            ),
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 날짜 + 요일
-            Text(
-              "${record.formattedDate} (${record.weekday})",
-              style: TextStyle(fontSize: 13, color: grey),
-            ),
-            const SizedBox(height: 12),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: surface,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 날짜 + 요일
+              Text(
+                "${record.formattedDate} (${record.weekday})",
+                style: TextStyle(fontSize: 13, color: grey),
+              ),
+              const SizedBox(height: 12),
 
-            // 거리 (크게)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  record.distanceKm.toStringAsFixed(2),
-                  style: TextStyle(
-                    fontSize: 44,
-                    fontWeight: FontWeight.w700,
-                    color: Theme.of(context).colorScheme.onSurface,
-                    height: 1.0,
+              // 거리 (크게)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    record.distanceKm.toStringAsFixed(2),
+                    style: TextStyle(
+                      fontSize: 44,
+                      fontWeight: FontWeight.w700,
+                      color: Theme.of(context).colorScheme.onSurface,
+                      height: 1.0,
+                    ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 6, bottom: 5),
-                  child: Text("km", style: TextStyle(fontSize: 16, color: grey)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6, bottom: 5),
+                    child:
+                        Text("km", style: TextStyle(fontSize: 16, color: grey)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
 
-            // 시간 + 페이스
-            Row(
-              children: [
-                _statChip(Icons.timer_outlined, record.formattedDuration,
-                    surface, grey),
-                const SizedBox(width: 12),
-                _statChip(Icons.speed_outlined, "${record.formattedPace}/km",
-                    surface, grey),
-              ],
-            ),
-            const SizedBox(height: 8),
+              // 시간 + 페이스
+              Row(
+                children: [
+                  _statChip(Icons.timer_outlined, record.formattedDuration,
+                      surface, grey),
+                  const SizedBox(width: 12),
+                  _statChip(Icons.speed_outlined, "${record.formattedPace}/km",
+                      surface, grey),
+                ],
+              ),
+              const SizedBox(height: 8),
 
-            // 케이던스 + 칼로리
-            Row(
-              children: [
-                _statChip(Icons.directions_walk_outlined,
-                    "${record.avgCadence} spm", surface, grey),
-                const SizedBox(width: 12),
-                _statChip(Icons.local_fire_department_outlined,
-                    "${record.caloriesBurned.toStringAsFixed(0)} kcal", surface, grey),
-              ],
-            ),
-            const SizedBox(height: 10),
+              // 케이던스 + 칼로리
+              Row(
+                children: [
+                  _statChip(Icons.directions_walk_outlined,
+                      "${record.avgCadence} spm", surface, grey),
+                  const SizedBox(width: 12),
+                  _statChip(
+                      Icons.local_fire_department_outlined,
+                      "${record.caloriesBurned.toStringAsFixed(0)} kcal",
+                      surface,
+                      grey),
+                ],
+              ),
+              const SizedBox(height: 10),
 
-            // 당시 날씨 스냅샷
-            Row(
-              children: [
-                Icon(
-                  record.hasWeather
-                      ? Icons.wb_sunny_outlined
-                      : Icons.cloud_off_outlined,
-                  size: 13,
-                  color: grey,
-                ),
-                const SizedBox(width: 5),
-                Text(record.weatherSummary,
-                    style: TextStyle(fontSize: 12, color: grey)),
-              ],
-            ),
-          ],
+              // 당시 날씨 스냅샷
+              Row(
+                children: [
+                  Icon(
+                    record.hasWeather
+                        ? Icons.wb_sunny_outlined
+                        : Icons.cloud_off_outlined,
+                    size: 13,
+                    color: grey,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(record.weatherSummary,
+                      style: TextStyle(fontSize: 12, color: grey)),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -275,7 +296,8 @@ class HistoryScreenState extends State<HistoryScreen> {
           Icon(icon, size: 13, color: grey),
           const SizedBox(width: 5),
           Text(value,
-              style: TextStyle(fontSize: 13, color: onSurface.withValues(alpha: 0.7))),
+              style: TextStyle(
+                  fontSize: 13, color: onSurface.withValues(alpha: 0.7))),
         ],
       ),
     );

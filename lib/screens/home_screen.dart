@@ -404,6 +404,7 @@ class _HomeScreenState extends State<HomeScreen> {
       weatherTempC: _workoutStartWeather?.tempC,
       weatherHumidity: _workoutStartWeather?.humidity,
       weatherPrecipitationPercent: _workoutStartWeather?.precipitationPercent,
+      routePoints: List<LatLng>.from(_routePoints),
     );
     await DatabaseService.instance.insertWorkout(record);
   }
