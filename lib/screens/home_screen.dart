@@ -710,12 +710,13 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Text(
                     _weatherLoading
                         ? '위치 확인 중...'
                         : (_locationName ?? '위치 정보 없음'),
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -727,6 +728,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     _weatherLoading
                         ? '날씨 확인 중...'
                         : (_weather?.summaryText ?? '날씨 정보 없음'),
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
