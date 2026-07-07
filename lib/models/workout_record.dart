@@ -6,6 +6,9 @@ class WorkoutRecord {
   final double avgPaceSecPerKm;
   final int avgCadence;
   final double caloriesBurned;
+  final double? weatherTempC;
+  final int? weatherHumidity;
+  final int? weatherPrecipitationPercent;
 
   const WorkoutRecord({
     this.id,
@@ -15,6 +18,9 @@ class WorkoutRecord {
     required this.avgPaceSecPerKm,
     this.avgCadence = 0,
     this.caloriesBurned = 0.0,
+    this.weatherTempC,
+    this.weatherHumidity,
+    this.weatherPrecipitationPercent,
   });
 
   Map<String, dynamic> toMap() => {
@@ -25,6 +31,9 @@ class WorkoutRecord {
     'avg_pace_sec': avgPaceSecPerKm,
     'avg_cadence': avgCadence,
     'calories_burned': caloriesBurned,
+    'weather_temp_c': weatherTempC,
+    'weather_humidity': weatherHumidity,
+    'weather_precipitation_percent': weatherPrecipitationPercent,
   };
 
   factory WorkoutRecord.fromMap(Map<String, dynamic> map) => WorkoutRecord(
@@ -35,7 +44,18 @@ class WorkoutRecord {
     avgPaceSecPerKm: (map['avg_pace_sec'] as num).toDouble(),
     avgCadence: (map['avg_cadence'] as num?)?.toInt() ?? 0,
     caloriesBurned: (map['calories_burned'] as num?)?.toDouble() ?? 0.0,
+    weatherTempC: (map['weather_temp_c'] as num?)?.toDouble(),
+    weatherHumidity: (map['weather_humidity'] as num?)?.toInt(),
+    weatherPrecipitationPercent:
+        (map['weather_precipitation_percent'] as num?)?.toInt(),
   );
+
+  bool get hasWeather =>
+      weatherTempC != null && weatherHumidity != null && weatherPrecipitationPercent != null;
+
+  String get weatherSummary => hasWeather
+      ? '${weatherTempC!.round()}°C · 습도 $weatherHumidity% · 강수확률 $weatherPrecipitationPercent%'
+      : '날씨 정보 없음';
 
   String get formattedDate {
     return "${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}";

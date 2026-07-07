@@ -11,6 +11,7 @@ import '../models/app_settings.dart';
 import '../models/workout_record.dart';
 import '../services/metronome_service.dart';
 import '../services/database_service.dart';
+import '../services/weather_service.dart';
 
 enum WorkoutState { idle, countdown, running, paused }
 
@@ -95,6 +96,22 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _appliedTtsGender;
   bool? _appliedMixSetting;
 
+  // ── 날씨 ─────────────────────────────────────────────────────────────────
+  final WeatherService _weatherService = WeatherService();
+  WeatherSnapshot? _weather;
+  bool _weatherLoading = true;
+  WeatherSnapshot? _workoutStartWeather; // 운동 시작 시점 스냅샷 (기록 저장용)
+
+  Future<void> _fetchWeather() async {
+    setState(() => _weatherLoading = true);
+    final snapshot = await _weatherService.fetchCurrentWeather();
+    if (!mounted) return;
+    setState(() {
+      _weather = snapshot;
+      _weatherLoading = false;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -103,6 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _appliedMixSetting = _s.mixWithOtherAudio;
     _metronome.init(mixWithOtherAudio: _s.mixWithOtherAudio);
     _fetchLocation();
+    _fetchWeather();
   }
 
   @override
@@ -217,6 +235,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _doStartWorkout() async {
     setState(() => _workoutState = WorkoutState.running);
+    _workoutStartWeather = _weather;
     _announceWorkoutStart();
     _metronome.start(_s.bpm);
     _lastGpsPoint = null;
@@ -376,6 +395,9 @@ class _HomeScreenState extends State<HomeScreen> {
       avgPaceSecPerKm: _seconds / _distanceKm,
       avgCadence: _cadenceSpm(_totalSteps, _seconds),
       caloriesBurned: _calculateCalories(),
+      weatherTempC: _workoutStartWeather?.tempC,
+      weatherHumidity: _workoutStartWeather?.humidity,
+      weatherPrecipitationPercent: _workoutStartWeather?.precipitationPercent,
     );
     await DatabaseService.instance.insertWorkout(record);
   }
@@ -638,6 +660,20 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: _s.preset.onBackground.withValues(alpha: 0.7), size: 26),
                   ),
                 ],
+              ),
+            ),
+
+            // 날씨 요약 (제주시 기준)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+              child: Text(
+                _weatherLoading
+                    ? '날씨 확인 중...'
+                    : (_weather?.summaryText ?? '날씨 정보 없음'),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _s.preset.onBackground.withValues(alpha: 0.45),
+                ),
               ),
             ),
 

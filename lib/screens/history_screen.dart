@@ -238,6 +238,23 @@ class HistoryScreenState extends State<HistoryScreen> {
                     "${record.caloriesBurned.toStringAsFixed(0)} kcal", surface, grey),
               ],
             ),
+            const SizedBox(height: 10),
+
+            // 당시 날씨 스냅샷
+            Row(
+              children: [
+                Icon(
+                  record.hasWeather
+                      ? Icons.wb_sunny_outlined
+                      : Icons.cloud_off_outlined,
+                  size: 13,
+                  color: grey,
+                ),
+                const SizedBox(width: 5),
+                Text(record.weatherSummary,
+                    style: TextStyle(fontSize: 12, color: grey)),
+              ],
+            ),
           ],
         ),
       ),
