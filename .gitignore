@@ -43,3 +43,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# 프로젝트 루트에 임시로 쌓이는 테스트/배포용 산출물 (카톡 배포, 스크린샷 등)
+# 경로 anchor(/)로 루트만 대상 — assets/ 하위 아이콘 등 실제 사용 리소스는 영향 없음
+/*.apk
+/*.zip
+/KakaoTalk_*.jpg
+/snail_running_apk_qr.png
+/snail_running_theme_and_cycle_fix.patch
