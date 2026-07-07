@@ -226,6 +226,18 @@ class HistoryScreenState extends State<HistoryScreen> {
                     surface, grey),
               ],
             ),
+            const SizedBox(height: 8),
+
+            // 케이던스 + 칼로리
+            Row(
+              children: [
+                _statChip(Icons.directions_walk_outlined,
+                    "${record.avgCadence} spm", surface, grey),
+                const SizedBox(width: 12),
+                _statChip(Icons.local_fire_department_outlined,
+                    "${record.caloriesBurned.toStringAsFixed(0)} kcal", surface, grey),
+              ],
+            ),
           ],
         ),
       ),

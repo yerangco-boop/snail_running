@@ -14,6 +14,7 @@ class AppSettings {
   GoalType goalType;
   String ttsVoiceGender;
   bool mixWithOtherAudio;
+  double weightKg;
   ThemePreset preset;
 
   AppSettings({
@@ -25,6 +26,7 @@ class AppSettings {
     this.goalType = GoalType.distance,
     this.ttsVoiceGender = 'female',
     this.mixWithOtherAudio = true,
+    this.weightKg = 60.0,
     ThemePreset? preset,
   }) : preset = preset ?? kThemePresets.first;
 

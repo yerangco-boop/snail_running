@@ -75,6 +75,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               onTap: _showPacePicker,
             ),
+            const SizedBox(height: 8),
+
+            _settingCard(
+              icon: Icons.monitor_weight_outlined,
+              label: "체중 (칼로리 계산용)",
+              trailing: Text("${_s.weightKg.toStringAsFixed(1)} kg",
+                  style: TextStyle(
+                      color: _s.preset.onSurface, fontWeight: FontWeight.bold)),
+              onTap: _showWeightPicker,
+            ),
 
             const SizedBox(height: 28),
 
@@ -356,6 +366,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ))
             .toList(),
+      ),
+    );
+  }
+
+  void _showWeightPicker() {
+    final ctrl = TextEditingController(text: _s.weightKg.toStringAsFixed(1));
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: _surface,
+        title: const Text("체중 (kg)"),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              final v = double.tryParse(ctrl.text);
+              if (v != null && v > 0) _update(() => _s.weightKg = v);
+              Navigator.pop(context);
+            },
+            child: Text("확인", style: TextStyle(color: _accent)),
+          ),
+        ],
       ),
     );
   }

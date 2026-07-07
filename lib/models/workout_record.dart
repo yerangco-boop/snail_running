@@ -4,6 +4,8 @@ class WorkoutRecord {
   final double distanceKm;
   final int durationSeconds;
   final double avgPaceSecPerKm;
+  final int avgCadence;
+  final double caloriesBurned;
 
   const WorkoutRecord({
     this.id,
@@ -11,6 +13,8 @@ class WorkoutRecord {
     required this.distanceKm,
     required this.durationSeconds,
     required this.avgPaceSecPerKm,
+    this.avgCadence = 0,
+    this.caloriesBurned = 0.0,
   });
 
   Map<String, dynamic> toMap() => {
@@ -19,6 +23,8 @@ class WorkoutRecord {
     'distance_km': distanceKm,
     'duration_seconds': durationSeconds,
     'avg_pace_sec': avgPaceSecPerKm,
+    'avg_cadence': avgCadence,
+    'calories_burned': caloriesBurned,
   };
 
   factory WorkoutRecord.fromMap(Map<String, dynamic> map) => WorkoutRecord(
@@ -27,6 +33,8 @@ class WorkoutRecord {
     distanceKm: (map['distance_km'] as num).toDouble(),
     durationSeconds: map['duration_seconds'] as int,
     avgPaceSecPerKm: (map['avg_pace_sec'] as num).toDouble(),
+    avgCadence: (map['avg_cadence'] as num?)?.toInt() ?? 0,
+    caloriesBurned: (map['calories_burned'] as num?)?.toDouble() ?? 0.0,
   );
 
   String get formattedDate {

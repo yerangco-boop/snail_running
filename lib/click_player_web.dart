@@ -5,7 +5,9 @@ import 'dart:js' as js;
 class ClickPlayer {
   js.JsObject? _ctx;
 
-  Future<void> init() async {
+  // 웹 Audio API는 네이티브 AudioFocus 개념이 없어 mixWithOtherAudio는 무시됨
+  // (인터페이스를 click_player_stub.dart와 맞추기 위한 매개변수)
+  Future<void> init({bool mixWithOtherAudio = true}) async {
     try {
       final ctor = js.context['AudioContext'] ?? js.context['webkitAudioContext'];
       _ctx = js.JsObject(ctor as js.JsFunction);

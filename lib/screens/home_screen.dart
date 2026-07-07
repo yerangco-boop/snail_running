@@ -36,9 +36,9 @@ class _HomeScreenState extends State<HomeScreen> {
   int _seconds = 0;
   int _countdownValue = 3;
 
-  // 운동 중 중앙 큰 숫자 표시 모드: 0=거리, 1=시간, 2=BPM (탭할 때마다 순환)
+  // 운동 중 중앙 큰 숫자 표시 모드: 0=거리, 1=시간, 2=케이던스, 3=kcal (탭할 때마다 순환)
   int _mainDisplayMode = 0;
-  static const List<String> _mainDisplayLabels = ['km', '시간', 'BPM'];
+  static const List<String> _mainDisplayLabels = ['km', '시간', '케이던스', 'kcal'];
 
   void _cycleMainDisplay() {
     setState(() => _mainDisplayMode = (_mainDisplayMode + 1) % _mainDisplayLabels.length);
@@ -60,7 +60,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   StreamSubscription<Position>? _positionSub;
   LatLng? _lastGpsPoint;
+  DateTime? _lastGpsTime;
   static const int _gpsAccuracyThresholdMeters = 25; // 이보다 부정확한 측위는 거리 누적에서 제외
+  static const double _maxPlausibleSpeedKmh = 25.0; // 이보다 빠른 순간 속도는 GPS 튐으로 간주해 제외
+
+  // 지도에 그릴 주행 경로
+  final List<LatLng> _routePoints = [];
 
   // ── 케이던스(걸음수/분) — 가속도계 피크 감지 방식 ─────────────────────────
   StreamSubscription<UserAccelerometerEvent>? _accelSub;
@@ -70,16 +75,33 @@ class _HomeScreenState extends State<HomeScreen> {
   static const double _stepMagnitudeThreshold = 1.2; // m/s², 실기기 테스트 후 조정 필요할 수 있음
   static const int _minStepIntervalMs = 250; // 분당 최대 240보 한도로 노이즈 중복 감지 방지
 
+  // 최근 걸음 시각(실시간 케이던스 롤링 윈도우 계산용)
+  final List<DateTime> _recentStepTimestamps = [];
+  static const int _cadenceWindowSeconds = 12; // 10~15초 롤링 윈도우
+
+  // 최근 윈도우 기준 실시간 케이던스(분당 걸음수)
+  int get _liveCadenceSpm {
+    final cutoff = DateTime.now().subtract(const Duration(seconds: _cadenceWindowSeconds));
+    _recentStepTimestamps.removeWhere((t) => t.isBefore(cutoff));
+    if (_recentStepTimestamps.isEmpty) return 0;
+    final spanSeconds =
+        DateTime.now().difference(_recentStepTimestamps.first).inMilliseconds / 1000.0;
+    final effectiveSpan = spanSeconds < 1 ? 1.0 : spanSeconds;
+    return (_recentStepTimestamps.length / (effectiveSpan / 60.0)).round();
+  }
+
   AppSettings get _s => widget.settings;
 
   String? _appliedTtsGender;
+  bool? _appliedMixSetting;
 
   @override
   void initState() {
     super.initState();
     _tts.setLanguage("ko-KR");
     _applyTtsVoice();
-    _metronome.init();
+    _appliedMixSetting = _s.mixWithOtherAudio;
+    _metronome.init(mixWithOtherAudio: _s.mixWithOtherAudio);
     _fetchLocation();
   }
 
@@ -88,6 +110,10 @@ class _HomeScreenState extends State<HomeScreen> {
     super.didUpdateWidget(oldWidget);
     if (_appliedTtsGender != _s.ttsVoiceGender) {
       _applyTtsVoice();
+    }
+    if (_appliedMixSetting != _s.mixWithOtherAudio) {
+      _appliedMixSetting = _s.mixWithOtherAudio;
+      _metronome.init(mixWithOtherAudio: _s.mixWithOtherAudio);
     }
   }
 
@@ -194,6 +220,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _announceWorkoutStart();
     _metronome.start(_s.bpm);
     _lastGpsPoint = null;
+    _lastGpsTime = null;
     await _startGpsTracking();
     _startStepDetection();
     _launchTimer();
@@ -210,6 +237,7 @@ class _HomeScreenState extends State<HomeScreen> {
               now.difference(_lastStepAt!).inMilliseconds > _minStepIntervalMs)) {
         _lastStepAt = now;
         _totalSteps++;
+        _recentStepTimestamps.add(now);
       }
     });
   }
@@ -226,6 +254,23 @@ class _HomeScreenState extends State<HomeScreen> {
     return '$m분 $sec초';
   }
 
+  // 슬로우 조깅 페이스(8~12분/km) 구간을 MET 6~7로 선형 보간 (8분=7, 12분=6)
+  double _metForPace(double paceMinPerKm) {
+    if (paceMinPerKm <= 8) return 7.0;
+    if (paceMinPerKm >= 12) return 6.0;
+    final t = (paceMinPerKm - 8) / (12 - 8);
+    return 7.0 - t;
+  }
+
+  // MET × 체중(kg) × 시간(h) 공식 기반 칼로리 소모량
+  double _calculateCalories() {
+    if (_distanceKm < 0.01 || _seconds < 1) return 0.0;
+    final paceMinPerKm = (_seconds / 60.0) / _distanceKm;
+    final met = _metForPace(paceMinPerKm);
+    final hours = _seconds / 3600.0;
+    return met * _s.weightKg * hours;
+  }
+
   Future<void> _startGpsTracking() async {
     try {
       var perm = await Geolocator.checkPermission();
@@ -238,23 +283,34 @@ class _HomeScreenState extends State<HomeScreen> {
       _positionSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          distanceFilter: 3,
+          distanceFilter: 1,
         ),
       ).listen((pos) {
         if (!mounted) return;
         final point = LatLng(pos.latitude, pos.longitude);
+        final now = pos.timestamp;
         if (pos.accuracy <= _gpsAccuracyThresholdMeters) {
-          if (_lastGpsPoint != null) {
+          if (_lastGpsPoint != null && _lastGpsTime != null) {
             final meters = Geolocator.distanceBetween(
               _lastGpsPoint!.latitude, _lastGpsPoint!.longitude,
               point.latitude, point.longitude,
             );
-            setState(() {
-              _distanceKm += meters / 1000.0;
-              _checkAudioGuide();
-            });
+            final elapsedSec =
+                now.difference(_lastGpsTime!).inMilliseconds / 1000.0;
+            final speedKmh = elapsedSec > 0 ? (meters / elapsedSec) * 3.6 : 0.0;
+            // GPS 튐(순간이동)으로 인한 비현실적인 속도는 거리 누적에서 제외
+            if (speedKmh <= _maxPlausibleSpeedKmh) {
+              setState(() {
+                _distanceKm += meters / 1000.0;
+                _routePoints.add(point);
+                _checkAudioGuide();
+              });
+            }
+          } else {
+            _routePoints.add(point);
           }
           _lastGpsPoint = point;
+          _lastGpsTime = now;
         }
         setState(() {
           _mapCenter = point;
@@ -287,6 +343,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _workoutState = WorkoutState.running);
     _metronome.start(_s.bpm, playImmediately: false);
     _lastGpsPoint = null;
+    _lastGpsTime = null;
     _startGpsTracking();
     _startStepDetection();
     _launchTimer();
@@ -317,6 +374,8 @@ class _HomeScreenState extends State<HomeScreen> {
       distanceKm: _distanceKm,
       durationSeconds: _seconds,
       avgPaceSecPerKm: _seconds / _distanceKm,
+      avgCadence: _cadenceSpm(_totalSteps, _seconds),
+      caloriesBurned: _calculateCalories(),
     );
     await DatabaseService.instance.insertWorkout(record);
   }
@@ -350,6 +409,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _totalSteps = 0;
       _lapStepsAtLastKm = 0;
       _lastStepAt = null;
+      _recentStepTimestamps.clear();
+      _routePoints.clear();
     });
   }
 
@@ -512,7 +573,9 @@ class _HomeScreenState extends State<HomeScreen> {
       case 1:
         return _formattedTime;
       case 2:
-        return '${_s.bpm}';
+        return '$_liveCadenceSpm';
+      case 3:
+        return _calculateCalories().toStringAsFixed(0);
       default:
         return _distanceKm.toStringAsFixed(2);
     }
@@ -733,6 +796,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 urlTemplate: 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
                 userAgentPackageName: 'snail_running',
               ),
+              if (_routePoints.length > 1)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: _routePoints,
+                      color: _s.accent,
+                      strokeWidth: 4,
+                    ),
+                  ],
+                ),
               if (_hasLocation)
                 MarkerLayer(
                   markers: [
