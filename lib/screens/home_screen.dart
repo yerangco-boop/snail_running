@@ -104,7 +104,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _fetchWeather() async {
     setState(() => _weatherLoading = true);
-    final snapshot = await _weatherService.fetchCurrentWeather();
+    // 위치를 이미 구했다면(_fetchLocation 완료) 그 좌표를 그대로 사용 —
+    // 제주도는 해안/중산간/산간 기상차가 커서 실제 뛰는 위치 기준이어야 함
+    final snapshot = await _weatherService.fetchCurrentWeather(
+      lat: _hasLocation ? _mapCenter.latitude : null,
+      lon: _hasLocation ? _mapCenter.longitude : null,
+    );
     if (!mounted) return;
     setState(() {
       _weather = snapshot;
@@ -119,8 +124,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _applyTtsVoice();
     _appliedMixSetting = _s.mixWithOtherAudio;
     _metronome.init(mixWithOtherAudio: _s.mixWithOtherAudio);
-    _fetchLocation();
-    _fetchWeather();
+    // 위치를 먼저 구한 뒤 그 좌표로 날씨를 조회 (위치 조회 실패해도 fetchLocation이
+    // 내부에서 예외를 삼키므로 이어서 항상 폴백 좌표로 날씨 조회가 진행됨)
+    _fetchLocation().then((_) => _fetchWeather());
   }
 
   @override

@@ -21,23 +21,28 @@ class WeatherSnapshot {
       '${tempC.round()}°C · 습도 $humidity% · 강수확률 $precipitationPercent% · 바람 ${windSpeedMs.toStringAsFixed(0)}m/s';
 }
 
-// 제주시 좌표 고정
 class WeatherService {
-  static const double _lat = 33.4996;
-  static const double _lon = 126.5312;
+  // 제주도는 해안/중산간/산간 지역별 기상차가 커서, 위치를 못 가져온 경우에만
+  // 쓰는 폴백 좌표 (제주시)
+  static const double _fallbackLat = 33.4996;
+  static const double _fallbackLon = 126.5312;
 
   // API 키는 코드에 하드코딩하지 않고 빌드 시 --dart-define=OPENWEATHER_API_KEY=xxx 로 주입
   static const String _apiKey = String.fromEnvironment('OPENWEATHER_API_KEY');
 
-  Future<WeatherSnapshot?> fetchCurrentWeather() async {
+  // lat/lon을 지정하지 않으면(GPS 위치 없음) 제주시 좌표로 폴백
+  Future<WeatherSnapshot?> fetchCurrentWeather({double? lat, double? lon}) async {
+    final effectiveLat = lat ?? _fallbackLat;
+    final effectiveLon = lon ?? _fallbackLon;
+
     if (_apiKey.isEmpty) {
       debugPrint('[Weather] OPENWEATHER_API_KEY가 설정되지 않음');
       return null;
     }
     try {
       final currentUri = Uri.https('api.openweathermap.org', '/data/2.5/weather', {
-        'lat': '$_lat',
-        'lon': '$_lon',
+        'lat': '$effectiveLat',
+        'lon': '$effectiveLon',
         'appid': _apiKey,
         'units': 'metric',
         'lang': 'kr',
@@ -45,8 +50,8 @@ class WeatherService {
       // 무료 "현재 날씨" API는 강수확률(pop)을 제공하지 않아, 5일/3시간 예보의
       // 가장 가까운 구간 값을 강수확률로 사용
       final forecastUri = Uri.https('api.openweathermap.org', '/data/2.5/forecast', {
-        'lat': '$_lat',
-        'lon': '$_lon',
+        'lat': '$effectiveLat',
+        'lon': '$effectiveLon',
         'appid': _apiKey,
         'units': 'metric',
         'lang': 'kr',
