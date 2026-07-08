@@ -741,7 +741,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     _weatherLoading
                         ? '위치 확인 중...'
-                        : (_locationName ?? '위치 정보 없음'),
+                        : '${_weather?.fetchedAtText ?? ''}${_locationName != null ? ' · $_locationName' : ''}',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
@@ -753,7 +753,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     _weatherLoading
                         ? '날씨 확인 중...'
-                        : (_weather?.fullSummaryText ?? '날씨 정보 없음'),
+                        : (_weather?.summaryText ?? '날씨 정보 없음'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 13,

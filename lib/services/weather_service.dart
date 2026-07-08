@@ -24,14 +24,12 @@ class WeatherSnapshot {
   String get summaryText =>
       '${tempC.round()}°C · 습도 $humidity% · 강수확률 $precipitationPercent% · 바람 ${windSpeedMs.toStringAsFixed(0)}m/s';
 
-  // 조회 시각 + 도시명을 앞에 붙인 전체 요약 (날씨가 실제로 언제/어디 기준인지 확인용)
-  String get fullSummaryText {
+  // 조회 시각 (예: "2026.07.08 10:22")
+  String get fetchedAtText {
     final f = fetchedAt;
-    final ts = '${f.year}.${f.month.toString().padLeft(2, '0')}.'
+    return '${f.year}.${f.month.toString().padLeft(2, '0')}.'
         '${f.day.toString().padLeft(2, '0')} '
         '${f.hour.toString().padLeft(2, '0')}:${f.minute.toString().padLeft(2, '0')}';
-    final cityPart = cityName.isNotEmpty ? ' · $cityName' : '';
-    return '$ts$cityPart · $summaryText';
   }
 }
 
