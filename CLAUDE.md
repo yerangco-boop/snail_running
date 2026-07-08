@@ -83,6 +83,12 @@ OpenStreetMap via `flutter_map` + CartoDB light tiles (`basemaps.cartocdn.com/li
   - **중요**: 프로젝트 경로에 한글이 섞여 있어 Dart AOT 스냅샷 생성이 실패함 (`gradle.properties`의 `android.overridePathCheck=true`로는 AGP 경로 검사만 우회되고, 이 문제는 못 막음). `flutter build apk`는 반드시 **영문 경로로 복사한 뒤**(예: `robocopy "<프로젝트>" "C:\build\snail_running" /MIR /XD ".git" ".dart_tool" "build"`) 그 복사본에서 실행할 것. 빌드 결과물만 원본 위치로 복사해오면 됨
   - 빌드 후 실기기 배포는 같은 와이파이의 LAN IP로 `python -m http.server`(또는 유사 서버) 띄워서 폰 브라우저로 다운로드하거나, 카톡은 `.apk` 확장자를 차단하므로 `.zip`으로 이름 바꿔 보내고 받은 쪽에서 다시 `.apk`로 이름 변경 후 설치
   - **release 빌드마다 `pubspec.yaml`의 `version: 1.0.0+N`에서 `+N`(versionCode) 1씩 증가시킬 것** (2026-07-06부터 적용). 서명 키(debug 키스토어, 이 PC 고정)와 패키지 ID가 안 바뀌므로 기존 설치 앱 위에 그냥 덮어설치 가능하며 데이터도 유지되는데, versionCode를 안 올리면 안드로이드가 "업데이트"로 명확히 인식하지 못하고 재설치처럼 동작함
+  - **날씨 기능(OpenWeatherMap) API 키는 이 PC의 사용자 환경변수 `OPENWEATHER_API_KEY`에 저장됨** (하드코딩 금지, `--dart-define`으로 주입). 이 Bash 세션은 등록 시점 이후에 뜬 새 프로세스가 아니면 `$env:`로 못 읽으므로, 빌드 시 레지스트리에서 직접 읽어와야 함:
+    ```bash
+    OWM_KEY=$(powershell.exe -NoProfile -Command "[Environment]::GetEnvironmentVariable('OPENWEATHER_API_KEY','User')" | tr -d '\r\n')
+    flutter build apk --release --dart-define=OPENWEATHER_API_KEY="$OWM_KEY"
+    ```
+    (`flutter run -d chrome`으로 UI만 확인할 때는 키 없이 실행해도 됨 — "날씨 정보 없음"으로 안전하게 표시됨)
 
 ## 작업 규칙
 
@@ -104,12 +110,20 @@ OpenStreetMap via `flutter_map` + CartoDB light tiles (`basemaps.cartocdn.com/li
 - [x] GPS 기반 실거리 측정 (2026-07-03, 페이스 시뮬레이션에서 전환)
 - [x] 케이던스 실측 (가속도계 피크 감지, 2026-07-06) — 매 km/절반/목표/정지 시 음성 안내에 포함
 - [x] 앱 아이콘 (2026-07-06) — `flutter_launcher_icons`로 달팽이 캐릭터 아이콘 생성 (`assets/icon/icon.png`, `icon_foreground.png`), 코랄-핑크 그라디언트 배경 + 보라색 나선 껍질
-- [ ] "다른 오디오와 함께 재생" 토글이 UI에만 있고 실제 `ClickPlayer`/`AudioContextAndroid`에 연결 안 됨 (`AudioFocus.none`이 토글과 무관하게 항상 고정이라 꺼도 효과 없음). 다음 실외 테스트 후 케이던스 threshold 조정과 함께 한 커밋으로 처리 예정
+- [x] "다른 오디오와 함께 재생" 토글 연결 (2026-07-07) — `mixWithOtherAudio`가 false면 `AndroidAudioFocus.gain`으로 다른 오디오를 정지시키도록 `ClickPlayer.init()`에 실제 연결. 설정 변경 시 `didUpdateWidget`에서 재적용
+- [x] OpenWeatherMap 날씨 연동 (2026-07-07~08) — `lib/services/weather_service.dart`. 실제 GPS 위치 기준으로 조회(제주시 좌표는 위치 실패 시 폴백 전용). 시작 전 화면에 역지오코딩 지역명(1번째 줄) + 조회시각·도시명·기온/습도/강수확률/풍속(2번째 줄) 표시, 가운데 정렬. API 키는 `--dart-define`으로 주입(하드코딩 금지, 위 "환경" 섹션 참고)
+- [x] 이력에서 주행 경로 지도로 다시 보기 (2026-07-07) — `WorkoutRecord.routePoints`를 JSON 문자열로 DB 저장(DB v4), 이력 카드 탭 → `route_detail_screen.dart`에서 `PolylineLayer` + km 마커로 표시. `LatLngBounds.fromPoints` + `fitCamera`로 경로 전체가 보이도록 자동 줌
+- [x] GPS 정확도 개선 (2026-07-08) — 순간 속도 25km/h 초과 구간은 기준점(`_lastGpsPoint`/`_lastGpsTime`)을 갱신하지 않음(신호 회복 시 실제 이동거리 온전히 반영). 최근 4개 원본 포인트의 이동평균으로 스무딩한 좌표를 거리 계산·경로 표시 양쪽에 사용해 지그재그 완화
+- [x] km 단위 경로 마커 (2026-07-08) — `lib/utils/route_utils.dart`의 `computeKmMarkers`로 경로상 1km 간격 지점을 선형보간 계산, 이력 상세 지도·실시간 주행 지도 양쪽에 배지 표시
+- [x] 설정 화면 숫자 입력을 휠 피커로 전환 (2026-07-08) — 목표거리/페이스/체중 입력을 타이핑 대신 `CupertinoPicker` 스크롤 방식으로 (나이키런 스타일)
+- [ ] 지역명이 시/군 단위까지만 나오고 동 단위(예: "충주시 목행동")가 잘 안 나오는 경우 있음 — 안드로이드 기본 Geocoder(`geocoding` 패키지) 데이터가 이 위치에 대해 그 정도까지만 갖고 있는 것으로 보임. 카카오/네이버 로컬 API로 교체하면 더 정확할 수 있으나, **2026-07-08 기준 사용자가 "실사용해보고 필요하면 그때 바꾸자"고 보류 결정** — 먼저 바꾸자고 제안하지 말 것
 - [ ] GitHub Pages 주소에서 웹 빌드 동작 테스트
 - [ ] (참고) 실기기 테스트에서 TTS 남/여 음성이 실제로는 똑같이 나오는 경우 있음 — 기기의 한국어 TTS 음성 목록 자체에 성별 구분이 없는 환경 문제일 수 있어 실기기에서 재확인 필요
 
-### 다음 실외 테스트 시 확인 항목 (2026-07-06 빌드 기준)
+### 다음 실외 테스트 시 확인 항목 (2026-07-08 빌드=versionCode 10 기준)
 
-- 메트로놈 규칙성 — `PlayerMode.lowLatency`(SoundPool) 전환 효과가 실제로 있는지
+- 메트로놈 규칙성 — `PlayerMode.lowLatency`(SoundPool) 전환 효과가 실제로 있는지 (2026-07-06 수정, 아직 실외 확인 안 됨)
 - 케이던스 표시값이 체감 페이스와 맞는지 — threshold `1.2 m/s²` (`home_screen.dart`의 `_stepMagnitudeThreshold`) 적정성
 - 바람 조건에 따른 오탐지 여부 — 강풍 시 손 흔들림으로 걸음 수 과다 카운트 가능성 (제주 등 강풍 지역에서 특히 확인 필요)
+- GPS 이동평균 스무딩 후 경로가 실제 주행로와 비교해 부드러워졌는지, km 마커 위치가 정확한지
+- 날씨 정보가 실제 위치/시각 기준으로 잘 나오는지 (지역명이 예상과 다르면 위 "지역명 동 단위 미표시" 항목과 함께 재검토)
