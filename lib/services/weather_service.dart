@@ -8,6 +8,8 @@ class WeatherSnapshot {
   final int precipitationPercent; // 0~100
   final double windSpeedMs;
   final String iconCode; // OpenWeatherMap 아이콘 코드 (예: "01d")
+  final DateTime fetchedAt;
+  final String cityName; // OpenWeatherMap 응답의 도시명 (current['name'])
 
   const WeatherSnapshot({
     required this.tempC,
@@ -15,10 +17,22 @@ class WeatherSnapshot {
     required this.precipitationPercent,
     required this.windSpeedMs,
     required this.iconCode,
+    required this.fetchedAt,
+    required this.cityName,
   });
 
   String get summaryText =>
       '${tempC.round()}°C · 습도 $humidity% · 강수확률 $precipitationPercent% · 바람 ${windSpeedMs.toStringAsFixed(0)}m/s';
+
+  // 조회 시각 + 도시명을 앞에 붙인 전체 요약 (날씨가 실제로 언제/어디 기준인지 확인용)
+  String get fullSummaryText {
+    final f = fetchedAt;
+    final ts = '${f.year}.${f.month.toString().padLeft(2, '0')}.'
+        '${f.day.toString().padLeft(2, '0')} '
+        '${f.hour.toString().padLeft(2, '0')}:${f.minute.toString().padLeft(2, '0')}';
+    final cityPart = cityName.isNotEmpty ? ' · $cityName' : '';
+    return '$ts$cityPart · $summaryText';
+  }
 }
 
 class WeatherService {
@@ -89,6 +103,8 @@ class WeatherService {
         precipitationPercent: pop,
         windSpeedMs: ((wind['speed'] as num?) ?? 0).toDouble(),
         iconCode: icon,
+        fetchedAt: DateTime.now(),
+        cityName: (current['name'] as String?) ?? '',
       );
     } catch (e) {
       debugPrint('[Weather] 조회 실패: $e');

@@ -13,6 +13,7 @@ import '../models/workout_record.dart';
 import '../services/metronome_service.dart';
 import '../services/database_service.dart';
 import '../services/weather_service.dart';
+import '../utils/route_utils.dart';
 
 enum WorkoutState { idle, countdown, running, paused }
 
@@ -61,10 +62,23 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _hasLocation = false;
 
   StreamSubscription<Position>? _positionSub;
-  LatLng? _lastGpsPoint;
+  LatLng? _lastGpsPoint; // 마지막으로 "신뢰할 수 있었던"(거리 누적에 반영된) 지점
   DateTime? _lastGpsTime;
   static const int _gpsAccuracyThresholdMeters = 25; // 이보다 부정확한 측위는 거리 누적에서 제외
   static const double _maxPlausibleSpeedKmh = 25.0; // 이보다 빠른 순간 속도는 GPS 튐으로 간주해 제외
+
+  // 최근 원본 GPS 포인트(이동평균 스무딩용) — 미세한 GPS 잡음으로 인한 경로 지그재그 완화
+  final List<LatLng> _rawGpsPoints = [];
+  static const int _gpsSmoothingWindow = 4;
+
+  LatLng _averageLatLng(List<LatLng> points) {
+    var sumLat = 0.0, sumLon = 0.0;
+    for (final p in points) {
+      sumLat += p.latitude;
+      sumLon += p.longitude;
+    }
+    return LatLng(sumLat / points.length, sumLon / points.length);
+  }
 
   // 지도에 그릴 주행 경로
   final List<LatLng> _routePoints = [];
@@ -282,6 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _metronome.start(_s.bpm);
     _lastGpsPoint = null;
     _lastGpsTime = null;
+    _rawGpsPoints.clear();
     await _startGpsTracking();
     _startStepDetection();
     _launchTimer();
@@ -348,35 +363,44 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ).listen((pos) {
         if (!mounted) return;
-        final point = LatLng(pos.latitude, pos.longitude);
+        final rawPoint = LatLng(pos.latitude, pos.longitude);
         final now = pos.timestamp;
         if (pos.accuracy <= _gpsAccuracyThresholdMeters) {
+          _rawGpsPoints.add(rawPoint);
+          if (_rawGpsPoints.length > _gpsSmoothingWindow) {
+            _rawGpsPoints.removeAt(0);
+          }
+          final smoothed = _averageLatLng(_rawGpsPoints);
+
           if (_lastGpsPoint != null && _lastGpsTime != null) {
             final meters = Geolocator.distanceBetween(
               _lastGpsPoint!.latitude, _lastGpsPoint!.longitude,
-              point.latitude, point.longitude,
+              smoothed.latitude, smoothed.longitude,
             );
             final elapsedSec =
                 now.difference(_lastGpsTime!).inMilliseconds / 1000.0;
             final speedKmh = elapsedSec > 0 ? (meters / elapsedSec) * 3.6 : 0.0;
-            // GPS 튐(순간이동)으로 인한 비현실적인 속도는 거리 누적에서 제외
+            // GPS 튐(순간이동)으로 인한 비현실적인 속도는 거리 누적에서 제외.
+            // 이때 기준점을 갱신하지 않아야 신호 회복 후 실제 이동거리가 온전히 반영됨
             if (speedKmh <= _maxPlausibleSpeedKmh) {
               setState(() {
                 _distanceKm += meters / 1000.0;
-                _routePoints.add(point);
+                _routePoints.add(smoothed);
                 _checkAudioGuide();
               });
+              _lastGpsPoint = smoothed;
+              _lastGpsTime = now;
             }
           } else {
-            _routePoints.add(point);
+            _routePoints.add(smoothed);
+            _lastGpsPoint = smoothed;
+            _lastGpsTime = now;
           }
-          _lastGpsPoint = point;
-          _lastGpsTime = now;
+          setState(() {
+            _mapCenter = smoothed;
+            _hasLocation = true;
+          });
         }
-        setState(() {
-          _mapCenter = point;
-          _hasLocation = true;
-        });
       });
     } catch (_) {}
   }
@@ -405,6 +429,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _metronome.start(_s.bpm, playImmediately: false);
     _lastGpsPoint = null;
     _lastGpsTime = null;
+    _rawGpsPoints.clear();
     _startGpsTracking();
     _startStepDetection();
     _launchTimer();
@@ -476,6 +501,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _lastStepAt = null;
       _recentStepTimestamps.clear();
       _routePoints.clear();
+      _rawGpsPoints.clear();
     });
   }
 
@@ -727,7 +753,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     _weatherLoading
                         ? '날씨 확인 중...'
-                        : (_weather?.summaryText ?? '날씨 정보 없음'),
+                        : (_weather?.fullSummaryText ?? '날씨 정보 없음'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 13,
@@ -902,6 +928,18 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: _s.accent,
                       strokeWidth: 4,
                     ),
+                  ],
+                ),
+              if (_routePoints.length > 1)
+                MarkerLayer(
+                  markers: [
+                    for (final m in computeKmMarkers(_routePoints))
+                      Marker(
+                        point: m.point,
+                        width: 36,
+                        height: 20,
+                        child: buildKmMarkerChip(m.km, _s.accent),
+                      ),
                   ],
                 ),
               if (_hasLocation)

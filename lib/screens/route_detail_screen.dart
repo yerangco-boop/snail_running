@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import '../models/app_settings.dart';
 import '../models/workout_record.dart';
+import '../utils/route_utils.dart';
 
 // 이력 카드 탭 시 그날 주행 경로를 지도로 보여주는 화면
 class RouteDetailScreen extends StatefulWidget {
@@ -88,6 +89,13 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                 ),
                 MarkerLayer(
                   markers: [
+                    for (final m in computeKmMarkers(record.routePoints!))
+                      Marker(
+                        point: m.point,
+                        width: 36,
+                        height: 20,
+                        child: buildKmMarkerChip(m.km, accent),
+                      ),
                     Marker(
                       point: record.routePoints!.first,
                       child: Icon(Icons.flag_rounded, color: accent, size: 26),
