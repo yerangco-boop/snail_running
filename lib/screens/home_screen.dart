@@ -62,22 +62,27 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _hasLocation = false;
 
   StreamSubscription<Position>? _positionSub;
-  LatLng? _lastGpsPoint; // 마지막으로 "신뢰할 수 있었던"(거리 누적에 반영된) 지점
+  LatLng? _lastGpsPoint; // 마지막으로 거리 누적에 반영된 지점
   DateTime? _lastGpsTime;
   static const int _gpsAccuracyThresholdMeters = 25; // 이보다 부정확한 측위는 거리 누적에서 제외
-  static const double _maxPlausibleSpeedKmh = 25.0; // 이보다 빠른 순간 속도는 GPS 튐으로 간주해 제외
+  static const double _maxPlausibleSpeedKmh = 25.0; // 이보다 빠른 순간 속도는 GPS 튐으로 간주 (아래 "캡" 참고)
+  // 콜백 간격이 이보다 짧으면 순간속도 계산을 건너뜀 — distanceFilter가 촘촘해서(1m)
+  // 아주 짧은 시간차에 콜백이 몰릴 때는 정상적인 GPS 잡음(2~5m)만으로도 순간속도가
+  // 크게 튀어 오탐하기 쉬움
+  static const double _minGpsIntervalSec = 0.5;
 
-  // 최근 원본 GPS 포인트(이동평균 스무딩용) — 미세한 GPS 잡음으로 인한 경로 지그재그 완화
-  final List<LatLng> _rawGpsPoints = [];
-  static const int _gpsSmoothingWindow = 4;
+  // 최근 스무딩된 좌표(지수이동평균, EMA) — 고정 구간 박스평균과 달리 지연이 적어
+  // 곡선(트랙 등)에서 경로가 안쪽으로 당겨지며 실제보다 짧게 잡히는 현상을 줄여줌
+  LatLng? _emaPoint;
+  static const double _emaAlpha = 0.4;
 
-  LatLng _averageLatLng(List<LatLng> points) {
-    var sumLat = 0.0, sumLon = 0.0;
-    for (final p in points) {
-      sumLat += p.latitude;
-      sumLon += p.longitude;
-    }
-    return LatLng(sumLat / points.length, sumLon / points.length);
+  LatLng _applyEma(LatLng raw) {
+    final prev = _emaPoint;
+    if (prev == null) return raw;
+    return LatLng(
+      prev.latitude + _emaAlpha * (raw.latitude - prev.latitude),
+      prev.longitude + _emaAlpha * (raw.longitude - prev.longitude),
+    );
   }
 
   // 지도에 그릴 주행 경로
@@ -88,6 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _totalSteps = 0;
   int _lapStepsAtLastKm = 0;
   DateTime? _lastStepAt;
+  bool _belowStepThreshold = true; // 상승 엣지 감지용: 직전 샘플이 임계값 이하였는지
   static const double _stepMagnitudeThreshold = 1.2; // m/s², 실기기 테스트 후 조정 필요할 수 있음
   static const int _minStepIntervalMs = 250; // 분당 최대 240보 한도로 노이즈 중복 감지 방지
 
@@ -296,7 +302,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _metronome.start(_s.bpm);
     _lastGpsPoint = null;
     _lastGpsTime = null;
-    _rawGpsPoints.clear();
+    _emaPoint = null;
     await _startGpsTracking();
     _startStepDetection();
     _launchTimer();
@@ -305,16 +311,23 @@ class _HomeScreenState extends State<HomeScreen> {
   void _startStepDetection() {
     _accelSub?.cancel();
     _lastStepAt = null;
+    _belowStepThreshold = true;
     _accelSub = userAccelerometerEventStream().listen((e) {
       final mag = math.sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
       final now = DateTime.now();
-      if (mag > _stepMagnitudeThreshold &&
+      final isAbove = mag > _stepMagnitudeThreshold;
+      // 임계값을 "넘는 순간"(상승 엣지)에만 걸음으로 카운트 — 신호가 임계값 위에
+      // 머무는 동안 여러 샘플이 들어와도 한 걸음으로만 잡히도록 함(디바운스만으로는
+      // 임계값 근처에서 값이 미세하게 떨릴 때 중복 카운트될 여지가 있었음)
+      if (isAbove &&
+          _belowStepThreshold &&
           (_lastStepAt == null ||
               now.difference(_lastStepAt!).inMilliseconds > _minStepIntervalMs)) {
         _lastStepAt = now;
         _totalSteps++;
         _recentStepTimestamps.add(now);
       }
+      _belowStepThreshold = !isAbove;
     });
   }
 
@@ -363,44 +376,60 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ).listen((pos) {
         if (!mounted) return;
+        if (pos.accuracy > _gpsAccuracyThresholdMeters) return;
+
         final rawPoint = LatLng(pos.latitude, pos.longitude);
         final now = pos.timestamp;
-        if (pos.accuracy <= _gpsAccuracyThresholdMeters) {
-          _rawGpsPoints.add(rawPoint);
-          if (_rawGpsPoints.length > _gpsSmoothingWindow) {
-            _rawGpsPoints.removeAt(0);
-          }
-          final smoothed = _averageLatLng(_rawGpsPoints);
+        final smoothed = _applyEma(rawPoint);
+        _emaPoint = smoothed;
 
-          if (_lastGpsPoint != null && _lastGpsTime != null) {
-            final meters = Geolocator.distanceBetween(
-              _lastGpsPoint!.latitude, _lastGpsPoint!.longitude,
-              smoothed.latitude, smoothed.longitude,
-            );
-            final elapsedSec =
-                now.difference(_lastGpsTime!).inMilliseconds / 1000.0;
-            final speedKmh = elapsedSec > 0 ? (meters / elapsedSec) * 3.6 : 0.0;
-            // GPS 튐(순간이동)으로 인한 비현실적인 속도는 거리 누적에서 제외.
-            // 이때 기준점을 갱신하지 않아야 신호 회복 후 실제 이동거리가 온전히 반영됨
-            if (speedKmh <= _maxPlausibleSpeedKmh) {
-              setState(() {
-                _distanceKm += meters / 1000.0;
-                _routePoints.add(smoothed);
-                _checkAudioGuide();
-              });
-              _lastGpsPoint = smoothed;
-              _lastGpsTime = now;
-            }
-          } else {
-            _routePoints.add(smoothed);
-            _lastGpsPoint = smoothed;
-            _lastGpsTime = now;
+        if (_lastGpsPoint != null && _lastGpsTime != null) {
+          final elapsedSec = now.difference(_lastGpsTime!).inMilliseconds / 1000.0;
+          if (elapsedSec < _minGpsIntervalSec) {
+            // 콜백 간격이 너무 짧으면 순간속도가 잡음만으로 튈 수 있으니 위치 표시만 갱신하고
+            // 거리 누적은 다음 콜백(충분한 시간차가 쌓였을 때)으로 미룸
+            setState(() {
+              _mapCenter = smoothed;
+              _hasLocation = true;
+            });
+            return;
           }
+
+          final meters = Geolocator.distanceBetween(
+            _lastGpsPoint!.latitude, _lastGpsPoint!.longitude,
+            smoothed.latitude, smoothed.longitude,
+          );
+          final speedKmh = (meters / elapsedSec) * 3.6;
+          // 비현실적인 순간속도는 "버리지" 않고 최대 그럴듯한 속도로 상한만 적용.
+          // (예전엔 구간을 통째로 버리고 기준점도 갱신 안 해서, 다음 정상 구간이 왔을 때
+          //  옛 기준점→새 지점을 직선으로 건너뛰어 버렸음. 트랙처럼 계속 곡선을 도는
+          //  코스에서는 이 직선이 실제 호 경로보다 훨씬 짧아서 바퀴를 돌수록 오차가
+          //  누적되는 원인이었음 — 기준점은 항상 갱신해 이 "코너 지름길" 자체를 없앰)
+          final cappedMeters = speedKmh > _maxPlausibleSpeedKmh
+              ? (_maxPlausibleSpeedKmh / 3.6) * elapsedSec
+              : meters;
+          debugPrint(
+            '[GPS] acc=${pos.accuracy.toStringAsFixed(1)}m '
+            'speed=${speedKmh.toStringAsFixed(1)}km/h '
+            '${speedKmh > _maxPlausibleSpeedKmh ? "capped ${meters.toStringAsFixed(1)}m->${cappedMeters.toStringAsFixed(1)}m" : "meters=${meters.toStringAsFixed(1)}m"}',
+          );
+
           setState(() {
-            _mapCenter = smoothed;
-            _hasLocation = true;
+            _distanceKm += cappedMeters / 1000.0;
+            _routePoints.add(smoothed);
+            _checkAudioGuide();
           });
+          _lastGpsPoint = smoothed;
+          _lastGpsTime = now;
+        } else {
+          _routePoints.add(smoothed);
+          _lastGpsPoint = smoothed;
+          _lastGpsTime = now;
         }
+        setState(() {
+          _mapCenter = smoothed;
+          _hasLocation = true;
+        });
       });
     } catch (_) {}
   }
@@ -429,7 +458,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _metronome.start(_s.bpm, playImmediately: false);
     _lastGpsPoint = null;
     _lastGpsTime = null;
-    _rawGpsPoints.clear();
+    _emaPoint = null;
     _startGpsTracking();
     _startStepDetection();
     _launchTimer();
@@ -501,7 +530,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _lastStepAt = null;
       _recentStepTimestamps.clear();
       _routePoints.clear();
-      _rawGpsPoints.clear();
+      _emaPoint = null;
     });
   }
 
@@ -922,13 +951,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               if (_routePoints.length > 1)
                 PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: _routePoints,
-                      color: _s.accent,
-                      strokeWidth: 4,
-                    ),
-                  ],
+                  polylines: [buildRoutePolyline(_routePoints, _s.accent)],
                 ),
               if (_routePoints.length > 1)
                 MarkerLayer(
@@ -947,15 +970,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   markers: [
                     Marker(
                       point: _mapCenter,
-                      child: Container(
-                        width: 14,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: _s.accent,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                        ),
-                      ),
+                      width: 28,
+                      height: 28,
+                      child: buildLiveLocationMarker(_s.accent),
                     ),
                   ],
                 ),

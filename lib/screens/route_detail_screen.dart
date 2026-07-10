@@ -79,13 +79,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                   userAgentPackageName: 'snail_running',
                 ),
                 PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: record.routePoints!,
-                      color: accent,
-                      strokeWidth: 4,
-                    ),
-                  ],
+                  polylines: [buildRoutePolyline(record.routePoints!, accent)],
                 ),
                 MarkerLayer(
                   markers: [
@@ -98,12 +92,15 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                       ),
                     Marker(
                       point: record.routePoints!.first,
-                      child: Icon(Icons.flag_rounded, color: accent, size: 26),
+                      width: 30,
+                      height: 30,
+                      child: buildRouteEndpointMarker(Icons.flag_rounded, accent),
                     ),
                     Marker(
                       point: record.routePoints!.last,
-                      child:
-                          Icon(Icons.sports_score_rounded, color: accent, size: 26),
+                      width: 30,
+                      height: 30,
+                      child: buildRouteEndpointMarker(Icons.sports_score_rounded, accent),
                     ),
                   ],
                 ),
