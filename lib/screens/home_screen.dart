@@ -41,7 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 운동 중 중앙 큰 숫자 표시 모드: 0=거리, 1=시간, 2=케이던스, 3=kcal (탭할 때마다 순환)
   int _mainDisplayMode = 0;
-  static const List<String> _mainDisplayLabels = ['km', '시간', '케이던스', 'kcal'];
+  static const List<String> _mainDisplayLabels = ['km', '시간', '케이던스', 'kcal', '바퀴'];
 
   void _cycleMainDisplay() {
     setState(() => _mainDisplayMode = (_mainDisplayMode + 1) % _mainDisplayLabels.length);
@@ -75,6 +75,18 @@ class _HomeScreenState extends State<HomeScreen> {
   // 곡선(트랙 등)에서 경로가 안쪽으로 당겨지며 실제보다 짧게 잡히는 현상을 줄여줌
   LatLng? _emaPoint;
   static const double _emaAlpha = 0.4;
+
+  // ── 바퀴 수 자동 감지 (루프 코스용) ────────────────────────────────────────
+  // 운동 시작 지점에서 일정 거리 이상 멀어졌다가 다시 근처로 돌아오면 1바퀴로 카운트.
+  // 편도 코스(A→B)에서는 시작 지점으로 돌아올 일이 없으니 그냥 0(또는 1)에 머물 뿐,
+  // 별도 처리 없이도 안전하게 무해함.
+  LatLng? _lapStartPoint;
+  int _lapCount = 0;
+  bool _hasLeftLapZone = false;
+  // 스마트폰 GPS 잡음(보통 3~10m)보다 타이트하면 실제로 돌아와도 감지를 놓치므로
+  // 이 반경 자체를 더 줄이지 않음 — 과다 카운트 방지는 아래 "충분히 멀어짐" 가드가 담당
+  static const double _lapReturnRadiusMeters = 12.0;
+  static const double _lapMinAwayMeters = 100.0;
 
   LatLng _applyEma(LatLng raw) {
     final prev = _emaPoint;
@@ -303,6 +315,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _lastGpsPoint = null;
     _lastGpsTime = null;
     _emaPoint = null;
+    _lapStartPoint = null;
+    _lapCount = 0;
+    _hasLeftLapZone = false;
     await _startGpsTracking();
     _startStepDetection();
     _launchTimer();
@@ -382,6 +397,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final now = pos.timestamp;
         final smoothed = _applyEma(rawPoint);
         _emaPoint = smoothed;
+        _checkLapCompletion(smoothed);
 
         if (_lastGpsPoint != null && _lastGpsTime != null) {
           final elapsedSec = now.difference(_lastGpsTime!).inMilliseconds / 1000.0;
@@ -432,6 +448,22 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       });
     } catch (_) {}
+  }
+
+  // 시작 지점에서 충분히 멀어졌다가(_lapMinAwayMeters) 다시 근처로(_lapReturnRadiusMeters)
+  // 돌아오면 1바퀴로 카운트. 시작 지점은 이번 운동에서 첫 GPS 픽스로 고정(일시정지/재개에도 유지)
+  void _checkLapCompletion(LatLng point) {
+    _lapStartPoint ??= point;
+    final distFromStart = Geolocator.distanceBetween(
+      _lapStartPoint!.latitude, _lapStartPoint!.longitude,
+      point.latitude, point.longitude,
+    );
+    if (distFromStart > _lapMinAwayMeters) {
+      _hasLeftLapZone = true;
+    } else if (_hasLeftLapZone && distFromStart <= _lapReturnRadiusMeters) {
+      _hasLeftLapZone = false;
+      setState(() => _lapCount++);
+    }
   }
 
   void _announceWorkoutStart() {
@@ -490,6 +522,7 @@ class _HomeScreenState extends State<HomeScreen> {
       durationSeconds: _seconds,
       avgPaceSecPerKm: _seconds / _distanceKm,
       avgCadence: _cadenceSpm(_totalSteps, _seconds),
+      lapCount: _lapCount,
       caloriesBurned: _calculateCalories(),
       weatherTempC: _workoutStartWeather?.tempC,
       weatherHumidity: _workoutStartWeather?.humidity,
@@ -531,6 +564,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _recentStepTimestamps.clear();
       _routePoints.clear();
       _emaPoint = null;
+      _lapStartPoint = null;
+      _lapCount = 0;
+      _hasLeftLapZone = false;
     });
   }
 
@@ -696,6 +732,8 @@ class _HomeScreenState extends State<HomeScreen> {
         return '$_liveCadenceSpm';
       case 3:
         return _calculateCalories().toStringAsFixed(0);
+      case 4:
+        return '$_lapCount';
       default:
         return _distanceKm.toStringAsFixed(2);
     }

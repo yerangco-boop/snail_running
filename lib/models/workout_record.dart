@@ -8,6 +8,7 @@ class WorkoutRecord {
   final int durationSeconds;
   final double avgPaceSecPerKm;
   final int avgCadence;
+  final int lapCount;
   final double caloriesBurned;
   final double? weatherTempC;
   final int? weatherHumidity;
@@ -21,6 +22,7 @@ class WorkoutRecord {
     required this.durationSeconds,
     required this.avgPaceSecPerKm,
     this.avgCadence = 0,
+    this.lapCount = 0,
     this.caloriesBurned = 0.0,
     this.weatherTempC,
     this.weatherHumidity,
@@ -35,6 +37,7 @@ class WorkoutRecord {
     'duration_seconds': durationSeconds,
     'avg_pace_sec': avgPaceSecPerKm,
     'avg_cadence': avgCadence,
+    'lap_count': lapCount,
     'calories_burned': caloriesBurned,
     'weather_temp_c': weatherTempC,
     'weather_humidity': weatherHumidity,
@@ -51,6 +54,7 @@ class WorkoutRecord {
     durationSeconds: map['duration_seconds'] as int,
     avgPaceSecPerKm: (map['avg_pace_sec'] as num).toDouble(),
     avgCadence: (map['avg_cadence'] as num?)?.toInt() ?? 0,
+    lapCount: (map['lap_count'] as num?)?.toInt() ?? 0,
     caloriesBurned: (map['calories_burned'] as num?)?.toDouble() ?? 0.0,
     weatherTempC: (map['weather_temp_c'] as num?)?.toDouble(),
     weatherHumidity: (map['weather_humidity'] as num?)?.toInt(),

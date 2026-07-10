@@ -256,6 +256,11 @@ class HistoryScreenState extends State<HistoryScreen> {
                       "${record.caloriesBurned.toStringAsFixed(0)} kcal",
                       surface,
                       grey),
+                  if (record.lapCount > 0) ...[
+                    const SizedBox(width: 12),
+                    _statChip(Icons.replay_circle_filled_outlined,
+                        "${record.lapCount}바퀴", surface, grey),
+                  ],
                 ],
               ),
               const SizedBox(height: 10),
