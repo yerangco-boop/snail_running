@@ -27,6 +27,30 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # 로컬(강의실 PC) 빌드와 같은 릴리스 키스토어로 서명해야 기존 설치 위에 업데이트로
+      # 덮어설치 가능 — 서명 키가 다르면(예: CI 러너마다 새로 생기는 debug 키) 안드로이드가
+      # 설치를 거부/충돌함. 키스토어 자체는 base64로 인코딩해 Secrets에 저장해두고 여기서
+      # 디코드, key.properties는 android/app/build.gradle.kts가 읽는 파일이라 빌드 시점에만
+      # 러너 임시 디렉터리에 생성(커밋되지 않음)
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release-keystore.jks"
+
+      - name: Write key.properties
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          cat > android/key.properties <<EOF
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=$RUNNER_TEMP/release-keystore.jks
+          EOF
+
       - name: Build release APK
         env:
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
