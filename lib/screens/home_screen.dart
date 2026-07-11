@@ -62,10 +62,14 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _hasLocation = false;
 
   StreamSubscription<Position>? _positionSub;
-  LatLng? _lastGpsPoint; // 마지막으로 거리 누적에 반영된 지점
+  LatLng? _lastGpsPoint; // 마지막으로 거리 누적에 반영된 지점 (원시 좌표)
   DateTime? _lastGpsTime;
-  static const int _gpsAccuracyThresholdMeters = 25; // 이보다 부정확한 측위는 거리 누적에서 제외
+  static const int _gpsAccuracyThresholdMeters = 35; // 이보다 부정확한 측위는 거리 누적에서 제외
   static const double _maxPlausibleSpeedKmh = 25.0; // 이보다 빠른 순간 속도는 GPS 튐으로 간주 (아래 "캡" 참고)
+  // 연속으로 정확도 기준을 못 넘는 상태가 몇 초나 지속되는지 진단하기 위한 카운터
+  int _gpsRejectStreak = 0;
+  DateTime? _gpsRejectStreakStart;
+  double _lastGpsAccuracyMeters = 20.0;
   // 콜백 간격이 이보다 짧으면 순간속도 계산을 건너뜀 — distanceFilter가 촘촘해서(1m)
   // 아주 짧은 시간차에 콜백이 몰릴 때는 정상적인 GPS 잡음(2~5m)만으로도 순간속도가
   // 크게 튀어 오탐하기 쉬움
@@ -83,10 +87,13 @@ class _HomeScreenState extends State<HomeScreen> {
   LatLng? _lapStartPoint;
   int _lapCount = 0;
   bool _hasLeftLapZone = false;
-  // 스마트폰 GPS 잡음(보통 3~10m)보다 타이트하면 실제로 돌아와도 감지를 놓치므로
-  // 이 반경 자체를 더 줄이지 않음 — 과다 카운트 방지는 아래 "충분히 멀어짐" 가드가 담당
-  static const double _lapReturnRadiusMeters = 12.0;
-  static const double _lapMinAwayMeters = 100.0;
+  // 복귀 판정 반경은 고정값 대신 최근 GPS 정확도에 연동 — 신호가 나쁠 때(정확도 수치가
+  // 큼) 좁은 고정 반경으로는 실제 복귀도 놓치므로, 정확도가 나쁠수록 반경도 함께 넓어지게 함
+  static const double _lapReturnRadiusFloorMeters = 20.0;
+  static const double _lapReturnRadiusAccuracyFactor = 1.5;
+  double get _lapReturnRadiusMeters =>
+      math.max(_lapReturnRadiusFloorMeters, _lastGpsAccuracyMeters * _lapReturnRadiusAccuracyFactor);
+  static const double _lapMinAwayMeters = 150.0;
 
   LatLng _applyEma(LatLng raw) {
     final prev = _emaPoint;
@@ -126,7 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   AppSettings get _s => widget.settings;
 
-  String? _appliedTtsGender;
+  String? _appliedTtsVoiceName;
   bool? _appliedMixSetting;
 
   // ── 날씨 ─────────────────────────────────────────────────────────────────
@@ -200,7 +207,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void didUpdateWidget(covariant HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_appliedTtsGender != _s.ttsVoiceGender) {
+    if (_appliedTtsVoiceName != _s.ttsVoiceName) {
       _applyTtsVoice();
     }
     if (_appliedMixSetting != _s.mixWithOtherAudio) {
@@ -209,7 +216,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ttsVoiceGender 설정에 맞는 한국어 음성을 찾아 적용
+  // ttsVoiceName(설정에서 직접 고른 음성)에 맞는 음성을 적용. 선택된 음성이 없거나
+  // 더 이상 목록에 없으면 Google 계열 우선, 없으면 첫 한국어 음성으로 폴백
   Future<void> _applyTtsVoice() async {
     try {
       // 크롬은 speechSynthesis 음성 목록을 비동기로 늦게 채우는 경우가 있어
@@ -225,17 +233,15 @@ class _HomeScreenState extends State<HomeScreen> {
           .toList();
       debugPrint('[TTS] 한국어 음성 목록: $koreanVoices');
 
-      final wantMale = _s.ttsVoiceGender == 'male';
-      _appliedTtsGender = _s.ttsVoiceGender;
+      _appliedTtsVoiceName = _s.ttsVoiceName;
       Map? match;
-      for (final v in koreanVoices) {
-        final name = (v['name']?.toString() ?? '').toLowerCase();
-        final isMale = name.contains('male') && !name.contains('female');
-        final isFemale = name.contains('female');
-        if (wantMale && isMale) { match = v; break; }
-        if (!wantMale && isFemale) { match = v; break; }
+      if (_s.ttsVoiceName != null) {
+        match = koreanVoices.firstWhere(
+          (v) => v['name']?.toString() == _s.ttsVoiceName,
+          orElse: () => {},
+        );
+        if (match.isEmpty) match = null;
       }
-      // 성별이 이름에 명시되지 않은 경우, 더 자연스러운 음성(Google 계열)을 우선 사용
       match ??= koreanVoices.firstWhere(
         (v) => (v['name']?.toString() ?? '').toLowerCase().contains('google'),
         orElse: () => koreanVoices.isNotEmpty ? koreanVoices.first : {},
@@ -315,6 +321,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _lastGpsPoint = null;
     _lastGpsTime = null;
     _emaPoint = null;
+    _gpsRejectStreak = 0;
+    _gpsRejectStreakStart = null;
     _lapStartPoint = null;
     _lapCount = 0;
     _hasLeftLapZone = false;
@@ -327,7 +335,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _accelSub?.cancel();
     _lastStepAt = null;
     _belowStepThreshold = true;
-    _accelSub = userAccelerometerEventStream().listen((e) {
+    _accelSub = userAccelerometerEventStream(
+      samplingPeriod: SensorInterval.gameInterval, // 50Hz(20ms) — 상승 엣지 감지에 충분한 해상도
+    ).listen((e) {
       final mag = math.sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
       final now = DateTime.now();
       final isAbove = mag > _stepMagnitudeThreshold;
@@ -341,6 +351,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _lastStepAt = now;
         _totalSteps++;
         _recentStepTimestamps.add(now);
+        debugPrint('[Cadence] 임계값 통과 mag=${mag.toStringAsFixed(2)}m/s² totalSteps=$_totalSteps');
       }
       _belowStepThreshold = !isAbove;
     });
@@ -391,10 +402,27 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ).listen((pos) {
         if (!mounted) return;
-        if (pos.accuracy > _gpsAccuracyThresholdMeters) return;
+        if (pos.accuracy > _gpsAccuracyThresholdMeters) {
+          _gpsRejectStreak++;
+          _gpsRejectStreakStart ??= DateTime.now();
+          if (_gpsRejectStreak >= 3) {
+            final badSec = DateTime.now().difference(_gpsRejectStreakStart!).inSeconds;
+            debugPrint(
+              '[GPS] 신호불량 $badSec초 지속 (acc=${pos.accuracy.toStringAsFixed(1)}m, '
+              '연속거부=$_gpsRejectStreak회)',
+            );
+          }
+          return;
+        }
+        _gpsRejectStreak = 0;
+        _gpsRejectStreakStart = null;
+        _lastGpsAccuracyMeters = pos.accuracy;
 
         final rawPoint = LatLng(pos.latitude, pos.longitude);
         final now = pos.timestamp;
+        // EMA 스무딩 좌표는 경로 표시(_routePoints)와 지도 마커 전용 — 거리 계산은
+        // 원시 좌표로 되돌려, 스무딩이 곡선 구간에서 경로를 안쪽으로 당겨 실제보다
+        // 짧게 잡히게 하는 효과가 거리 수치에 섞이지 않도록 함
         final smoothed = _applyEma(rawPoint);
         _emaPoint = smoothed;
         _checkLapCompletion(smoothed);
@@ -413,7 +441,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           final meters = Geolocator.distanceBetween(
             _lastGpsPoint!.latitude, _lastGpsPoint!.longitude,
-            smoothed.latitude, smoothed.longitude,
+            rawPoint.latitude, rawPoint.longitude,
           );
           final speedKmh = (meters / elapsedSec) * 3.6;
           // 비현실적인 순간속도는 "버리지" 않고 최대 그럴듯한 속도로 상한만 적용.
@@ -435,11 +463,11 @@ class _HomeScreenState extends State<HomeScreen> {
             _routePoints.add(smoothed);
             _checkAudioGuide();
           });
-          _lastGpsPoint = smoothed;
+          _lastGpsPoint = rawPoint;
           _lastGpsTime = now;
         } else {
           _routePoints.add(smoothed);
-          _lastGpsPoint = smoothed;
+          _lastGpsPoint = rawPoint;
           _lastGpsTime = now;
         }
         setState(() {
@@ -491,6 +519,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _lastGpsPoint = null;
     _lastGpsTime = null;
     _emaPoint = null;
+    _gpsRejectStreak = 0;
+    _gpsRejectStreakStart = null;
     _startGpsTracking();
     _startStepDetection();
     _launchTimer();

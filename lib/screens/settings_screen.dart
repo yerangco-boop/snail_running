@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import '../models/app_settings.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -96,14 +97,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _settingCard(
               icon: Icons.record_voice_over_outlined,
               label: "TTS 음성",
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _genderChip("여성", 'female'),
-                  const SizedBox(width: 8),
-                  _genderChip("남성", 'male'),
-                ],
+              trailing: Text(
+                _s.ttsVoiceName ?? "자동",
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: _s.preset.onSurface, fontWeight: FontWeight.bold),
               ),
+              onTap: _showVoicePicker,
             ),
             const SizedBox(height: 8),
 
@@ -321,24 +320,74 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
 
-  Widget _genderChip(String label, String value) {
-    final selected = _s.ttsVoiceGender == value;
-    return GestureDetector(
-      onTap: () => _update(() => _s.ttsVoiceGender = value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? _accent : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: selected ? _accent : _s.preset.grey),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-              color: selected ? Colors.white : _s.preset.grey, fontSize: 13),
+  // 한국어 음성 목록을 피커로 보여주고, 각 항목의 미리듣기 버튼으로 실제 들어보고 고르게 함.
+  // 예전 male/female 이름 매칭 방식은 안드로이드 음성 이름에 성별이 표기되지 않아
+  // 작동하지 않았으므로 폐기하고, 목록 전체를 노출하는 방식으로 교체
+  Future<void> _showVoicePicker() async {
+    final previewTts = FlutterTts();
+    await previewTts.setLanguage('ko-KR');
+    var voices = await previewTts.getVoices;
+    for (var i = 0; i < 5 && (voices as List).isEmpty; i++) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      voices = await previewTts.getVoices;
+    }
+    final koreanVoices = (voices as List)
+        .whereType<Map>()
+        .where((v) => (v['locale']?.toString() ?? '').toLowerCase().startsWith('ko'))
+        .toList();
+    if (!mounted) return;
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: _surface,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text("음성 선택",
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold, color: _s.preset.onSurface)),
+            ),
+            if (koreanVoices.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text("사용 가능한 한국어 음성을 찾지 못했습니다.",
+                    style: TextStyle(color: _s.preset.grey)),
+              ),
+            for (final v in koreanVoices)
+              ListTile(
+                title: Text(v['name']?.toString() ?? '',
+                    style: TextStyle(color: _s.preset.onSurface)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.play_circle_outline, color: _accent),
+                      onPressed: () async {
+                        await previewTts.setVoice({
+                          'name': v['name'].toString(),
+                          'locale': v['locale'].toString(),
+                        });
+                        await previewTts.speak('안녕하세요, 슬로우 조깅을 시작합니다.');
+                      },
+                    ),
+                    if (_s.ttsVoiceName == v['name']?.toString())
+                      Icon(Icons.check_rounded, color: _accent),
+                  ],
+                ),
+                onTap: () {
+                  _update(() => _s.ttsVoiceName = v['name']?.toString());
+                  Navigator.pop(context);
+                },
+              ),
+          ],
         ),
       ),
     );
+    await previewTts.stop();
   }
 
   // ── 다이얼로그 ──────────────────────────────────────────────────────────────
