@@ -41,10 +41,10 @@ class HistoryScreenState extends State<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final accent = cs.primary;
-    final surface = cs.surface;
-    final grey = cs.outline;
+    final preset = widget.settings.preset;
+    final accent = preset.accent;
+    final surface = preset.surface;
+    final grey = preset.grey;
 
     return Scaffold(
       body: SafeArea(
@@ -75,7 +75,7 @@ class HistoryScreenState extends State<HistoryScreen> {
               ),
             ),
             if (!_loading && _records.isNotEmpty)
-              _buildSummaryRow(accent, surface, grey),
+              _buildSummaryRow(preset, accent, grey),
             Expanded(
               child: _loading
                   ? Center(child: CircularProgressIndicator(color: accent))
@@ -85,7 +85,7 @@ class HistoryScreenState extends State<HistoryScreen> {
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                           itemCount: _records.length,
                           itemBuilder: (_, i) =>
-                              _buildCard(_records[i], accent, surface, grey),
+                              _buildCard(_records[i], preset, accent, surface, grey),
                         ),
             ),
           ],
@@ -95,21 +95,25 @@ class HistoryScreenState extends State<HistoryScreen> {
   }
 
   // 최상단 통계 요약 바
-  Widget _buildSummaryRow(Color accent, Color surface, Color grey) {
+  Widget _buildSummaryRow(ThemePreset preset, Color accent, Color grey) {
     final totalKm = _records.fold(0.0, (s, r) => s + r.distanceKm);
     final totalSec = _records.fold(0, (s, r) => s + r.durationSeconds);
     final avgPace = totalSec > 0 && totalKm > 0.01 ? totalSec / totalKm : 0.0;
     final avgM = (avgPace ~/ 60).toInt();
     final avgS = avgPace.toInt() % 60;
-    final dividerColor =
-        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12);
+    final dividerColor = preset.onSurface.withValues(alpha: 0.12);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
-        color: surface,
+        gradient: LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: preset.cardGradient,
+        ),
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: preset.cardBorder),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -145,8 +149,8 @@ class HistoryScreenState extends State<HistoryScreen> {
       );
 
   // 개별 운동 기록 카드
-  Widget _buildCard(
-      WorkoutRecord record, Color accent, Color surface, Color grey) {
+  Widget _buildCard(WorkoutRecord record, ThemePreset preset, Color accent,
+      Color surface, Color grey) {
     return Dismissible(
       key: ValueKey(record.id),
       direction: DismissDirection.endToStart,
@@ -198,8 +202,13 @@ class HistoryScreenState extends State<HistoryScreen> {
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: surface,
+            gradient: LinearGradient(
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
+              colors: preset.cardGradient,
+            ),
             borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: preset.cardBorder),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,7 +229,9 @@ class HistoryScreenState extends State<HistoryScreen> {
                     style: TextStyle(
                       fontSize: 44,
                       fontWeight: FontWeight.w700,
-                      color: Theme.of(context).colorScheme.onSurface,
+                      // 무채색 카드 위에 테마의 보석톤(surface)을 그대로 얹어 "검정 위의 보석"처럼
+                      // 강조되도록 함 — 흰 텍스트(onSurface) 대신 의도적으로 채도색 사용
+                      color: surface,
                       height: 1.0,
                     ),
                   ),

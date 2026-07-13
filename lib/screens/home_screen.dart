@@ -878,16 +878,21 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    _s.goalType == GoalType.distance
-                        ? _s.targetDistanceKm.toStringAsFixed(1)
-                        : '${_s.targetTimeMinutes}',
-                    style: TextStyle(
-                      fontSize: 96,
-                      fontWeight: FontWeight.w800,
-                      color: _s.preset.onBackground,
-                      height: 1.0,
-                      letterSpacing: -4,
+                  ShaderMask(
+                    shaderCallback: (bounds) => LinearGradient(
+                      colors: [_s.preset.accentGradientStart, _s.preset.accentGradientEnd],
+                    ).createShader(bounds),
+                    child: Text(
+                      _s.goalType == GoalType.distance
+                          ? _s.targetDistanceKm.toStringAsFixed(1)
+                          : '${_s.targetTimeMinutes}',
+                      style: const TextStyle(
+                        fontSize: 96,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        height: 1.0,
+                        letterSpacing: -4,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -929,7 +934,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 88,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: _s.accent,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [_s.preset.accentGradientStart, _s.preset.accentGradientEnd],
+                    ),
                     boxShadow: [
                       BoxShadow(
                         color: _s.accent.withValues(alpha: 0.4),
@@ -1208,7 +1217,11 @@ class _HomeScreenState extends State<HomeScreen> {
         height: 80,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: _s.accent,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [_s.preset.accentGradientStart, _s.preset.accentGradientEnd],
+          ),
           boxShadow: [BoxShadow(color: _s.accent.withValues(alpha: 0.35), blurRadius: 20, spreadRadius: 4)],
         ),
         child: const Center(
@@ -1244,7 +1257,12 @@ class _HomeScreenState extends State<HomeScreen> {
             height: 80,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _s.accent,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [_s.preset.accentGradientStart, _s.preset.accentGradientEnd],
+              ),
+              boxShadow: [BoxShadow(color: _s.accent.withValues(alpha: 0.35), blurRadius: 20, spreadRadius: 4)],
             ),
             child: const Center(
               child: Icon(Icons.play_arrow_rounded, size: 44, color: Colors.white),
