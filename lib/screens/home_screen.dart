@@ -116,6 +116,13 @@ class _HomeScreenState extends State<HomeScreen> {
   static const double _stepMagnitudeThreshold = 1.2; // m/s², 실기기 테스트 후 조정 필요할 수 있음
   static const int _minStepIntervalMs = 250; // 분당 최대 240보 한도로 노이즈 중복 감지 방지
 
+  // 진단용: 실제로 들어온 가속도계 이벤트 수 vs 임계값을 넘은 수를 구분해서 남겨야
+  // "스트림 자체가 죽었다"와 "임계값이 너무 높아 걸음을 못 잡는다"를 로그로 구별할 수 있음
+  int _accelEventCount = 0;
+  double _windowMagMin = double.infinity;
+  double _windowMagMax = 0;
+  Timer? _cadenceDiagnosticTimer;
+
   // 최근 걸음 시각(실시간 케이던스 롤링 윈도우 계산용)
   final List<DateTime> _recentStepTimestamps = [];
   static const int _cadenceWindowSeconds = 12; // 10~15초 롤링 윈도우
@@ -265,6 +272,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _countdownTimer?.cancel();
     _positionSub?.cancel();
     _accelSub?.cancel();
+    _cadenceDiagnosticTimer?.cancel();
     _metronome.dispose();
     _mapController.dispose();
     super.dispose();
@@ -333,28 +341,66 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _startStepDetection() {
     _accelSub?.cancel();
+    _cadenceDiagnosticTimer?.cancel();
     _lastStepAt = null;
     _belowStepThreshold = true;
+    _accelEventCount = 0;
+    _windowMagMin = double.infinity;
+    _windowMagMax = 0;
+
+    // 5초마다 "수신 이벤트 수 vs 임계값 통과 수 vs 그 구간 mag 범위"를 요약 — 스트림이
+    // 죽었다면 이벤트=0으로 바로 드러나고, 스트림은 살아있는데 걸음만 못 잡는 거라면
+    // mag 최댓값이 임계값(1.2) 근처에서 못 넘는 패턴으로 드러남
+    var lastLoggedEventCount = 0;
+    var lastLoggedSteps = _totalSteps;
+    _cadenceDiagnosticTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      final eventsInWindow = _accelEventCount - lastLoggedEventCount;
+      final stepsInWindow = _totalSteps - lastLoggedSteps;
+      final magRange = _windowMagMin.isFinite
+          ? '${_windowMagMin.toStringAsFixed(2)}~${_windowMagMax.toStringAsFixed(2)}'
+          : '(이벤트 없음)';
+      debugPrint(
+        '[Cadence] 5초 요약: 수신이벤트=$eventsInWindow개 임계값통과=$stepsInWindow개 '
+        '구간mag범위=${magRange}m/s² 누적걸음=$_totalSteps',
+      );
+      lastLoggedEventCount = _accelEventCount;
+      lastLoggedSteps = _totalSteps;
+      _windowMagMin = double.infinity;
+      _windowMagMax = 0;
+    });
+
     _accelSub = userAccelerometerEventStream(
       samplingPeriod: SensorInterval.gameInterval, // 50Hz(20ms) — 상승 엣지 감지에 충분한 해상도
-    ).listen((e) {
-      final mag = math.sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
-      final now = DateTime.now();
-      final isAbove = mag > _stepMagnitudeThreshold;
-      // 임계값을 "넘는 순간"(상승 엣지)에만 걸음으로 카운트 — 신호가 임계값 위에
-      // 머무는 동안 여러 샘플이 들어와도 한 걸음으로만 잡히도록 함(디바운스만으로는
-      // 임계값 근처에서 값이 미세하게 떨릴 때 중복 카운트될 여지가 있었음)
-      if (isAbove &&
-          _belowStepThreshold &&
-          (_lastStepAt == null ||
-              now.difference(_lastStepAt!).inMilliseconds > _minStepIntervalMs)) {
-        _lastStepAt = now;
-        _totalSteps++;
-        _recentStepTimestamps.add(now);
-        debugPrint('[Cadence] 임계값 통과 mag=${mag.toStringAsFixed(2)}m/s² totalSteps=$_totalSteps');
-      }
-      _belowStepThreshold = !isAbove;
-    });
+    ).listen(
+      (e) {
+        _accelEventCount++;
+        final mag = math.sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
+        if (mag < _windowMagMin) _windowMagMin = mag;
+        if (mag > _windowMagMax) _windowMagMax = mag;
+        final now = DateTime.now();
+        final isAbove = mag > _stepMagnitudeThreshold;
+        // 임계값을 "넘는 순간"(상승 엣지)에만 걸음으로 카운트 — 신호가 임계값 위에
+        // 머무는 동안 여러 샘플이 들어와도 한 걸음으로만 잡히도록 함(디바운스만으로는
+        // 임계값 근처에서 값이 미세하게 떨릴 때 중복 카운트될 여지가 있었음)
+        if (isAbove &&
+            _belowStepThreshold &&
+            (_lastStepAt == null ||
+                now.difference(_lastStepAt!).inMilliseconds > _minStepIntervalMs)) {
+          _lastStepAt = now;
+          _totalSteps++;
+          _recentStepTimestamps.add(now);
+          debugPrint('[Cadence] 임계값 통과 mag=${mag.toStringAsFixed(2)}m/s² totalSteps=$_totalSteps');
+        }
+        _belowStepThreshold = !isAbove;
+      },
+      onError: (Object error, StackTrace stack) {
+        debugPrint('[Cadence] 가속도계 스트림 에러: $error');
+      },
+      onDone: () {
+        debugPrint('[Cadence] 가속도계 스트림 종료(onDone) — totalSteps=$_totalSteps 시점에 중단됨');
+      },
+      cancelOnError: false,
+    );
   }
 
   // lapSteps 이후의 시간(초) 동안의 케이던스(분당 걸음수)
@@ -509,6 +555,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _positionSub = null;
     _accelSub?.cancel();
     _accelSub = null;
+    _cadenceDiagnosticTimer?.cancel();
     _metronome.stop();
     setState(() => _workoutState = WorkoutState.paused);
   }
@@ -533,6 +580,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _positionSub = null;
     _accelSub?.cancel();
     _accelSub = null;
+    _cadenceDiagnosticTimer?.cancel();
     _metronome.stop();
     setState(() => _workoutState = WorkoutState.idle);
     _announceWorkoutSummary();
