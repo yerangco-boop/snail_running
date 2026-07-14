@@ -114,6 +114,7 @@ class HistoryScreenState extends State<HistoryScreen> {
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: preset.cardBorder),
+        boxShadow: preset.cardShadow,
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -209,6 +210,7 @@ class HistoryScreenState extends State<HistoryScreen> {
             ),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: preset.cardBorder),
+            boxShadow: preset.cardShadow,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

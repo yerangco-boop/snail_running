@@ -50,10 +50,12 @@ class ThemePreset {
           ? const Color(0xFF1A1A1A)
           : Colors.white;
 
-  // ── 이력 화면 카드 전용 "무채색 카드" 구조 ──────────────────────────────────
-  // surface(보석톤 채도색)를 그대로 카드 배경으로 쓰지 않고, 거의 검정에 가까운
-  // 베이스에 아주 소량(4~10%)만 섞은 무채색 그라디언트로 대체 — 카드 자체는 무채색을
-  // 유지하면서 테두리(cardBorder)로만 테마색을 드러내는 "중립 카드" 구조
+  // ── 카드(이력/설정) 공용 "무채색 카드" 구조 ─────────────────────────────────
+  // surface(보석톤 채도색)를 그대로 카드 배경으로 쓰지 않고, 이 테마의 실제
+  // background를 베이스로 살짝 밝게/어둡게(대각선 질감) + surface를 4~8%만
+  // 섞은 그라디언트로 대체 — 카드는 무채색을 유지하면서 테두리(cardBorder)로만
+  // 테마색을 드러내는 "중립 카드" 구조. 이전엔 base가 background와 무관한 고정
+  // 회색이라 테마별 톤이 카드에 안 실리는 문제가 있었음
   static Color _mix(Color tint, double t, Color base) => Color.fromRGBO(
         (tint.r * 255 * t + base.r * 255 * (1 - t)).round(),
         (tint.g * 255 * t + base.g * 255 * (1 - t)).round(),
@@ -61,13 +63,37 @@ class ThemePreset {
         1.0,
       );
 
+  static Color _lighten(Color c, double amt) => Color.fromRGBO(
+        (c.r * 255 + (255 - c.r * 255) * amt).round(),
+        (c.g * 255 + (255 - c.g * 255) * amt).round(),
+        (c.b * 255 + (255 - c.b * 255) * amt).round(),
+        1.0,
+      );
+
+  static Color _darken(Color c, double amt) => Color.fromRGBO(
+        (c.r * 255 * (1 - amt)).round(),
+        (c.g * 255 * (1 - amt)).round(),
+        (c.b * 255 * (1 - amt)).round(),
+        1.0,
+      );
+
   List<Color> get cardGradient => [
-        _mix(surface, 0.10, const Color(0xFF232328)),
-        _mix(surface, 0.06, const Color(0xFF1A1A1E)),
-        _mix(surface, 0.04, const Color(0xFF121214)),
+        _mix(surface, 0.08, _lighten(background, 0.08)),
+        _mix(surface, 0.06, background),
+        _mix(surface, 0.04, _darken(background, 0.06)),
       ];
 
-  Color get cardBorder => surface.withValues(alpha: 0.55);
+  // "은은하게 빛나는 선" 느낌 — 알파를 낮게(0.35) 두께는 얇게(1px, 각 사용처에서 기본값)
+  Color get cardBorder => surface.withValues(alpha: 0.35);
+
+  // 카드가 배경 위에 살짝 떠 보이도록 하는 공용 그림자
+  List<BoxShadow> get cardShadow => [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.35),
+          blurRadius: 16,
+          offset: const Offset(0, 6),
+        ),
+      ];
 }
 
 const kThemePresets = <ThemePreset>[
@@ -76,11 +102,11 @@ const kThemePresets = <ThemePreset>[
   ThemePreset(
     name: '미드나잇 바이올렛',
     subtitle: 'Midnight Violet · Amethyst',
-    background: Color(0xFF655B78),
+    background: Color(0xFF1A171F),
     surface:    Color(0xFFA279E9),
-    accent:     Color(0xFF8B6EF5),
-    accentGradientStart: Color(0xFF6D5EF2),
-    accentGradientEnd:   Color(0xFFB46BF0),
+    accent:     Color(0xFF8666FD),
+    accentGradientStart: Color(0xFF6655FB),
+    accentGradientEnd:   Color(0xFFB563F8),
     grey:       Color(0xFFCFBBF3),
     runGradient: [
       Color(0xFF2C2160),
@@ -94,11 +120,11 @@ const kThemePresets = <ThemePreset>[
   ThemePreset(
     name: '아크틱 블루',
     subtitle: 'Arctic Blue · Sapphire',
-    background: Color(0xFF54616F),
+    background: Color(0xFF171A1E),
     surface:    Color(0xFF388BE9),
-    accent:     Color(0xFF4BB4E6),
-    accentGradientStart: Color(0xFF2F8FD8),
-    accentGradientEnd:   Color(0xFF6FD0E8),
+    accent:     Color(0xFF42B7EF),
+    accentGradientStart: Color(0xFF2590E2),
+    accentGradientEnd:   Color(0xFF68D4EF),
     grey:       Color(0xFF9CC6F3),
     runGradient: [
       Color(0xFF0F3A55),
@@ -112,11 +138,11 @@ const kThemePresets = <ThemePreset>[
   ThemePreset(
     name: '에메랄드 나이트',
     subtitle: 'Emerald Night · Jade',
-    background: Color(0xFF4D645B),
+    background: Color(0xFF171C1A),
     surface:    Color(0xFF15945F),
-    accent:     Color(0xFF34B78A),
-    accentGradientStart: Color(0xFF1F9D76),
-    accentGradientEnd:   Color(0xFF6BD9A8),
+    accent:     Color(0xFF2CBF8C),
+    accentGradientStart: Color(0xFF17A579),
+    accentGradientEnd:   Color(0xFF64E0A9),
     grey:       Color(0xFF8CCBB1),
     runGradient: [
       Color(0xFF103B2C),
@@ -130,11 +156,11 @@ const kThemePresets = <ThemePreset>[
   ThemePreset(
     name: '로즈 골드',
     subtitle: 'Rose Gold · Garnet',
-    background: Color(0xFF6F5A5E),
+    background: Color(0xFF1E1719),
     surface:    Color(0xFFE84661),
-    accent:     Color(0xFFDD9D92),
-    accentGradientStart: Color(0xFFD98A8F),
-    accentGradientEnd:   Color(0xFFF0C199),
+    accent:     Color(0xFFE29A8D),
+    accentGradientStart: Color(0xFFDE858B),
+    accentGradientEnd:   Color(0xFFF5C194),
     grey:       Color(0xFFF2A3AE),
     runGradient: [
       Color(0xFF4A2226),
@@ -148,11 +174,11 @@ const kThemePresets = <ThemePreset>[
   ThemePreset(
     name: '앰버 프레스티지',
     subtitle: 'Amber Prestige · Topaz',
-    background: Color(0xFF695E4F),
+    background: Color(0xFF1E1A16),
     surface:    Color(0xFFC97C16),
-    accent:     Color(0xFFDBA449),
-    accentGradientStart: Color(0xFFC9862E),
-    accentGradientEnd:   Color(0xFFF0C869),
+    accent:     Color(0xFFE4A640),
+    accentGradientStart: Color(0xFFD28725),
+    accentGradientEnd:   Color(0xFFF8CB61),
     grey:       Color(0xFFE3BD8A),
     runGradient: [
       Color(0xFF402B0C),

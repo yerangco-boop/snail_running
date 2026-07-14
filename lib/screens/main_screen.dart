@@ -46,26 +46,37 @@ class _MainScreenState extends State<MainScreen> {
           SettingsScreen(settings: _s, onChanged: widget.onSettingsChanged),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tabIndex,
-        onDestinationSelected: _onTabSelected,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.directions_run_outlined),
-            selectedIcon: Icon(Icons.directions_run),
-            label: '홈',
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topRight,
+            end: Alignment.bottomLeft,
+            colors: _s.preset.cardGradient,
           ),
-          NavigationDestination(
-            icon: Icon(Icons.history_outlined),
-            selectedIcon: Icon(Icons.history),
-            label: '이력',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: '설정',
-          ),
-        ],
+          border: Border(top: BorderSide(color: _s.preset.cardBorder)),
+          boxShadow: _s.preset.cardShadow,
+        ),
+        child: NavigationBar(
+          selectedIndex: _tabIndex,
+          onDestinationSelected: _onTabSelected,
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.directions_run_outlined),
+              selectedIcon: Icon(Icons.directions_run),
+              label: '홈',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.history_outlined),
+              selectedIcon: Icon(Icons.history),
+              label: '이력',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings_outlined),
+              selectedIcon: Icon(Icons.settings),
+              label: '설정',
+            ),
+          ],
+        ),
       ),
     );
   }

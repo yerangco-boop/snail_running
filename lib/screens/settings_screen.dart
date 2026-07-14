@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../models/app_settings.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -21,6 +22,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   AppSettings get _s => widget.settings;
   Color get _accent => _s.accent;
   Color get _surface => _s.preset.surface;
+
+  // 실기기에 실제로 설치된 versionName/versionCode 확인용 (설정 화면 하단 표시)
+  String? _versionLabel;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    if (!mounted) return;
+    setState(() => _versionLabel = 'v${info.version} (${info.buildNumber})');
+  }
 
   void _update(VoidCallback fn) {
     setState(fn);
@@ -51,8 +67,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.music_note_outlined,
               label: "메트로놈 BPM",
               trailing: Text("${_s.bpm} BPM",
-                  style: TextStyle(
-                      color: _s.preset.onSurface, fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
               onTap: _showBpmPicker,
             ),
             const SizedBox(height: 8),
@@ -61,8 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.flag_outlined,
               label: "목표 거리",
               trailing: Text("${_s.targetDistanceKm.toStringAsFixed(1)} km",
-                  style: TextStyle(
-                      color: _s.preset.onSurface, fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
               onTap: _showDistancePicker,
             ),
             const SizedBox(height: 8),
@@ -72,8 +86,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               label: "목표 페이스",
               trailing: Text(
                 "${_s.paceMinutes}:${_s.paceSeconds.toString().padLeft(2, '0')} /km",
-                style: TextStyle(
-                    color: _s.preset.onSurface, fontWeight: FontWeight.bold),
+                style: TextStyle(color: _accent, fontWeight: FontWeight.bold),
               ),
               onTap: _showPacePicker,
             ),
@@ -83,8 +96,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.monitor_weight_outlined,
               label: "체중 (칼로리 계산용)",
               trailing: Text("${_s.weightKg.toStringAsFixed(1)} kg",
-                  style: TextStyle(
-                      color: _s.preset.onSurface, fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
               onTap: _showWeightPicker,
             ),
 
@@ -100,7 +112,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               trailing: Text(
                 _s.ttsVoiceName ?? "자동",
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: _s.preset.onSurface, fontWeight: FontWeight.bold),
+                style: TextStyle(color: _accent, fontWeight: FontWeight.bold),
               ),
               onTap: _showVoicePicker,
             ),
@@ -123,6 +135,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 8),
 
             _buildPresetGrid(),
+
+            const SizedBox(height: 28),
+            Center(
+              child: Text(
+                _versionLabel ?? '',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _s.preset.onBackgroundMuted,
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -303,13 +326,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
         borderRadius: BorderRadius.circular(16),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          decoration:
-              BoxDecoration(color: _surface, borderRadius: BorderRadius.circular(16)),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
+              colors: _s.preset.cardGradient,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _s.preset.cardBorder),
+            boxShadow: _s.preset.cardShadow,
+          ),
           child: Row(
             children: [
               Icon(icon, color: _accent, size: 22),
               const SizedBox(width: 16),
-              Expanded(child: Text(label, style: const TextStyle(fontSize: 16))),
+              Expanded(
+                  child: Text(label,
+                      style: TextStyle(fontSize: 16, color: _s.preset.onBackground))),
               trailing,
               if (onTap != null) ...[
                 const SizedBox(width: 8),
