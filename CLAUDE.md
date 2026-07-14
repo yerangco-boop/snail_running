@@ -37,7 +37,7 @@ flutter test test/some_test.dart   # Single test file
 - **SettingsScreen** — BPM picker, pace input, theme preset grid, audio toggles.
 
 ### Theme system
-`ThemePreset` (in `lib/models/theme_preset.dart`) holds five color roles: `background`, `surface`, `accent`, `grey`, `runGradient`. The five built-in presets live in `kThemePresets` and are currently light-background themes (코랄 선샤인/스카이 민트/레몬 스퀴즈/퍼플 팝/핫핑크 버스트), each with `background` luminance tuned to ~20% (was pure white; darkened per user request while keeping `surface` a light pastel). `AppSettings.preset` holds the active selection.
+`ThemePreset` (in `lib/models/theme_preset.dart`) holds color roles including `background`, `surface`, `accent`, `grey`, `runGradient`, plus `accentGradientStart`/`accentGradientEnd` and `cardGradient`/`cardBorder` (added 2026-07-13 for the dark-luxury redesign). The five built-in presets in `kThemePresets` are now **dark luxury gem-tone themes** (미드나잇 바이올렛/아크틱 블루/에메랄드 나이트/로즈 골드/앰버 프레스티지) — dark background + saturated jewel-tone cards + 2-color gradient accents (replaced the earlier light-background 코랄 선샤인 etc. set on 2026-07-13, per a Claude Design mockup). `AppSettings.preset` holds the active selection.
 
 `ThemePreset` derives: `sheetBg`, `divider`, `onBackground` (text color for content sitting directly on `background`), `onSurface` (text color for content sitting on `surface` — **not** the same computed value as `onBackground` since the two can have very different luminance; conflating them was the root cause of several invisible-text bugs), `onBackgroundMuted` (translucent `onBackground`, used instead of the flat `grey` field wherever text sits directly on `background`), and `onRun`.
 
@@ -51,12 +51,14 @@ flutter test test/some_test.dart   # Single test file
 The click sound asset is `assets/sounds/click.wav` (used only on native).
 
 ### TTS voice selection
-`HomeScreen._applyTtsVoice()` picks a Korean voice from `flutter_tts.getVoices` matching `AppSettings.ttsVoiceGender` ('male'/'female') by checking for "male"/"female" in the voice name, falling back to a voice with "google" in the name (usually more natural than an OS default), then to the first available Korean voice. Re-applied reactively via `didUpdateWidget` when `ttsVoiceGender` changes (previously only ran once in `initState`, so toggling the setting after the Home tab had already mounted had no effect).
+Name-based male/female matching was abandoned (2026-07-11) — Android voice names don't reliably encode gender, so it silently never matched on real devices. `AppSettings.ttsVoiceName` now stores the exact voice name the user picked from a full list-with-preview picker in Settings (`null` = auto). `HomeScreen._applyTtsVoice()` matches `ttsVoiceName` exactly against `flutter_tts.getVoices`; if unset or no longer present, falls back to a voice with "google" in the name, then the first available Korean voice. Re-applied reactively via `didUpdateWidget` when `ttsVoiceName` changes.
 
 Available voices are entirely dependent on the browser/OS — on desktop Chrome this project has seen anywhere from one voice (`Microsoft Heami`, robotic) to a better one (`Google 한국의`) depending on browser session state, with no code-level way to force a specific voice into existence if the platform doesn't expose it. Real devices (Android/iOS OS-level TTS) are expected to have more reliable multi-voice support.
 
 ### Distance tracking
-Distance is measured from real GPS movement via `Geolocator.getPositionStream` (accuracy: high, `distanceFilter: 3`), accumulated in `HomeScreen._startGpsTracking()`. Readings with `accuracy` worse than `_gpsAccuracyThresholdMeters` (25m) are ignored to reduce drift while stationary. The stream starts on workout start/resume and is cancelled on pause/stop. `AndroidManifest.xml` must declare `ACCESS_FINE_LOCATION`/`ACCESS_COARSE_LOCATION` — these were missing entirely until 2026-07-03, which silently broke all location features on real devices (web/desktop testing didn't surface it since the browser prompts separately).
+Distance is measured from real GPS movement via `Geolocator.getPositionStream` (accuracy: high, `distanceFilter: 1`), accumulated in `HomeScreen._startGpsTracking()` **from raw (unsmoothed) coordinates** — an EMA-smoothed copy is kept separately purely for route-line/map-marker display, after an earlier attempt (2026-07-10) that fed the smoothed point into the distance calc itself turned out to systematically shorten distance on curved/looped courses (see git history on `_startGpsTracking` if this regresses). Readings with `accuracy` worse than `_gpsAccuracyThresholdMeters` (35m, loosened from 25m on 2026-07-11) are ignored; 3+ consecutive rejections log a `[GPS] 신호불량 N초 지속` line for diagnosis. Instantaneous speed over `_maxPlausibleSpeedKmh` (25km/h) is capped rather than discarded, and the reference point always advances (avoids the old "skip-and-chord" bug that cut corners on repeated-loop courses). The stream starts on workout start/resume and is cancelled on pause/stop. `AndroidManifest.xml` must declare `ACCESS_FINE_LOCATION`/`ACCESS_COARSE_LOCATION` — these were missing entirely until 2026-07-03, which silently broke all location features on real devices (web/desktop testing didn't surface it since the browser prompts separately).
+
+Lap counting (`_checkLapCompletion`) counts a loop when the runner moves `_lapMinAwayMeters` (150m) from the start point and then returns within a dynamic radius `max(20m, latest GPS accuracy × 1.5)` — the radius scales with signal quality since a fixed tight radius missed real returns when accuracy was poor.
 
 ### Data persistence
 `DatabaseService` is a singleton wrapping `sqflite` (`snail_running.db`). All methods guard against web with `kIsWeb` checks (sqflite has no web support). Schema: single `workouts` table — `id, date, distance_km, duration_seconds, avg_pace_sec`.
@@ -74,8 +76,8 @@ OpenStreetMap via `flutter_map` + CartoDB light tiles (`basemaps.cartocdn.com/li
 ## 환경
 
 - Flutter SDK 위치: `D:\src\flutter` (강의실 PC)
-- 노트북에는 Flutter 없음 — 실행/빌드는 강의실 PC에서만 가능
-- 한글 경로 문제로 `flutter analyze` 크래시 발생 → `dart analyze` 사용
+- **노트북에는 Flutter 없음** — `flutter run`/`flutter build`/`dart analyze` 전부 불가. 코드 편집(Edit/Write)과 `git`만 가능. 2026-07-11~14에 GitHub Actions로 release APK 자동 빌드·배포가 갖춰진 뒤로는(아래 "GitHub Actions APK 자동 빌드·릴리스" 참고), **노트북에서 코드만 고쳐서 push하면 GitHub Release 페이지에서 서명된 APK를 받아 폰에 설치하는 흐름이 로컬 빌드 환경 없이도 가능**함 — 방학 중 배포 자체는 이 경로로 준비 완료. 다만 노트북에는 문법 오류를 미리 잡아줄 `dart analyze`/`flutter run -d chrome` 같은 즉석 확인 수단이 없어서, 오타/타입 오류가 있으면 push 후 5~6분 뒤 CI 빌드가 실패하고 나서야 알게 됨(2026-07-13 테마 커밋이 실제로 이렇게 검증 없이 커밋된 사례) — 되도록 변경을 작게 나누고, 여유가 있으면 노트북에 Flutter SDK만이라도 설치해 `flutter run -d chrome`으로 UI를 미리 확인하는 걸 권장(Android SDK/키스토어까지는 필요 없음, 로컬 APK 빌드/서명은 강의실 PC 전용으로 유지)
+- 한글 경로 문제로 `flutter analyze` 크래시 발생 → `dart analyze` 사용 (노트북에는 해당 없음 — Dart 자체가 없음)
 - **Android APK 빌드 환경 (강의실 PC, 2026-07-03 세팅 완료)**:
   - JDK 21: `D:\src\jdk-21.0.11+10`
   - Android SDK: `D:\src` (cmdline-tools, platform-tools, platforms 31/33/35/36, build-tools 35/36 설치됨)
@@ -147,21 +149,21 @@ OpenStreetMap via `flutter_map` + CartoDB light tiles (`basemaps.cartocdn.com/li
 - [x] GPS 거리 누적 알고리즘의 구조적 편향 수정 (2026-07-10) — 2026-07-09 실외 테스트(폴리텍 충주캠퍼스 트랙, GPS 방해물 없음)에서 나이키런 대비 거리가 크게 미달하고 뛴 거리가 늘수록 오차도 비례해서 커지는 패턴 확인. 원인: 순간속도가 `_maxPlausibleSpeedKmh`를 넘으면 구간을 통째로 버리고 기준점(`_lastGpsPoint`)도 갱신 안 하던 방식이, 다음 정상 구간에서 옛 기준점→새 지점을 직선(코너 지름길)으로 건너뛰어 트랙처럼 곡선이 반복되는 코스에서 바퀴 수만큼 오차가 누적되는 구조적 버그였음. 이제 상한만 적용하고 기준점은 항상 갱신(코너 지름길 자체를 없앰), 콜백 간격 0.5초 미만이면 순간속도 계산 스킵(짧은 시간차의 잡음성 고속 오탐 방지), 스무딩은 4점 박스평균 → EMA(지연 감소)로 교체. 진단용 `debugPrint('[GPS] ...')` 로그 추가(재발 시 `adb logcat`으로 확인)
 - [x] 케이던스 상승 엣지 감지로 개선 (2026-07-10) — 임계값 초과할 때마다 카운트 → 임계값을 "넘는 순간"에만 카운트하도록 변경(임계값 근처 노이즈 중복 카운트 방지). 임계값 숫자(1.2 m/s²) 자체는 실기기 데이터 없이 변경 안 함
 - [x] 경로 지도 디자인 업그레이드 (2026-07-10) — `route_utils.dart`에 `buildRoutePolyline`(흰 테두리 글로우 라인), `buildRouteEndpointMarker`(카드형 출발/도착 마커), `buildLiveLocationMarker`(펄스 실시간 위치) 공용 헬퍼 추가, `home_screen.dart`/`route_detail_screen.dart` 양쪽에 적용해 중복 제거
-- [x] 바퀴 수 자동 감지 (2026-07-10) — 트랙 등 루프 코스에서 나이키런/공인 거리와 비교 검증할 때 쓰려고 추가. 시작 지점에서 100m 이상 멀어졌다가 12m 반경 이내로 돌아오면 1바퀴로 카운트(`_checkLapCompletion`). 반경을 스마트폰 GPS 잡음(3~10m)보다 더 좁히면 실제 통과도 못 잡아 undercounting되므로 12m로 유지하고, 과다 카운트는 "100m 이상 멀어짐" 가드로 방지. 편도 코스에선 그냥 0에 머묾(무해). DB v5(`lap_count` 컬럼), 중앙 표시 순환에 "바퀴" 모드, 이력 카드에 칩 표시(0바퀴면 숨김) 추가. versionCode 12로 빌드
+- [x] 바퀴 수 자동 감지 (2026-07-10, 반경 로직 2026-07-11 개선) — 트랙 등 루프 코스에서 나이키런/공인 거리와 비교 검증할 때 쓰려고 추가. 시작 지점에서 `_lapMinAwayMeters`(150m, 100m에서 상향) 이상 멀어졌다가 동적 반경(`max(20m, 최근 GPS 정확도×1.5)`, 고정 12m에서 변경) 이내로 돌아오면 1바퀴로 카운트. 편도 코스에선 그냥 0에 머묾(무해). DB v5(`lap_count` 컬럼), 중앙 표시 순환에 "바퀴" 모드, 이력 카드에 칩 표시(0바퀴면 숨김)
+- [x] 케이던스/GPS/TTS 재작업 (2026-07-11) — 케이던스: 가속도계 샘플링을 50Hz(`SensorInterval.gameInterval`)로 명시하고 임계값 통과 시 `[Cadence]` 디버그 로그 추가. 거리: 2026-07-10에 도입했던 "거리 계산에 EMA 스무딩 좌표 사용"을 되돌리고 **원시 GPS 좌표로 거리 계산, EMA는 지도 표시 전용으로 분리**(정확도 컷도 25m→35m로 완화, 연속 3회 이상 정확도 미달 시 `[GPS] 신호불량 N초 지속` 로그). TTS: 이름 기반 male/female 매칭이 안드로이드에서 작동 안 해 폐기 → 설정 화면에 실제 음성 목록 + 미리듣기 버튼 피커로 교체, 선택값은 `AppSettings.ttsVoiceName`으로 저장(자동 폴백은 기존과 동일)
+- [x] 다크 럭셔리 테마 5종으로 전면 교체 (2026-07-13) — Claude Design 시안 반영. 기존 밝은 5개 테마(코랄 선샤인 등) → 미드나잇 바이올렛/아크틱 블루/에메랄드 나이트/로즈 골드/앰버 프레스티지로 교체. `theme_preset.dart`에 `accentGradientStart/End`, `cardGradient`/`cardBorder` 추가. **Flutter 없는 환경(노트북)에서 텍스트 레벨로만 작성되어 dart analyze/flutter run 없이 커밋됨** — 2026-07-14 v14 실기기 설치로 처음 육안 확인, 의도대로 잘 나옴 확인 완료
+- [x] GitHub Actions APK 자동 빌드·릴리스 (2026-07-11~14) — `.github/workflows/release-apk.yml`: push on main마다 release APK 빌드 후 GitHub Release로 태그(`vN`, pubspec의 versionCode)와 함께 자동 게시. 로컬·CI 공용 릴리스 키스토어 서명 통일(위 "환경" 섹션 키스토어 항목 참고). 2026-07-14, 원본 키스토어 파일 소실 + CI 시크릿 손상으로 v14 빌드가 한 차례 실패 → 키스토어 재발급으로 해결, 재실행 성공(태그 `v14` 정상 생성 확인)
 - [ ] 지역명이 시/군 단위까지만 나오고 동 단위(예: "충주시 목행동")가 잘 안 나오는 경우 있음 — 안드로이드 기본 Geocoder(`geocoding` 패키지) 데이터가 이 위치에 대해 그 정도까지만 갖고 있는 것으로 보임. 카카오/네이버 로컬 API로 교체하면 더 정확할 수 있으나, **2026-07-08 기준 사용자가 "실사용해보고 필요하면 그때 바꾸자"고 보류 결정** — 먼저 바꾸자고 제안하지 말 것
 - [ ] GitHub Pages 주소에서 웹 빌드 동작 테스트
-- [ ] (참고) 실기기 테스트에서 TTS 남/여 음성이 실제로는 똑같이 나오는 경우 있음 — 기기의 한국어 TTS 음성 목록 자체에 성별 구분이 없는 환경 문제일 수 있어 실기기에서 재확인 필요
+- [ ] 메트로놈 `usageType`/`contentType` 변경 — 2026-07-11 커밋 메시지에 "과거 실기기 무음 버그의 근본 원인 수정을 되돌리는 것이라 사용자 확인 후 보류"라고만 기록되어 있고 원래 요청 내용 상세는 없음. 다시 논의 필요하면 사용자에게 무엇을 원했는지부터 확인할 것
 
-### 다음 실외 테스트 시 확인 항목 (2026-07-10 빌드=versionCode 12 기준)
+### 다음 실외 테스트 시 확인 항목 (2026-07-14 빌드=versionCode 14 기준)
 
-- **바퀴 수 자동 감지가 실제 바퀴 수와 맞는지** — 트랙 실측(RealityScan + 네이버맵 거리재기 둘 다 270m로 수렴, 신뢰도 높은 기준값)과 비교. 반경 12m/가드 100m가 적정한지 이번 테스트로 판단(과다/과소 카운트 여부)
-- **거리 측정치가 나이키런/공인 트랙거리(270m×바퀴수)와 비슷해졌는지가 최우선 확인 항목** — 이번이 거리 정확도 수정 2번째 시도(1차: 2026-07-08 이동평균 스무딩, 결과 여전히 큰 오차로 재확인됨). 이번에도 오차가 크게 남으면 값만 또 바꾸지 말고, 코드에 추가된 `[GPS]` 디버그 로그(`adb logcat`)로 실제 accuracy/speed 수치를 받아서 진단할 것
-
-- **거리 측정치가 나이키런과 비슷해졌는지가 최우선 확인 항목** — 이번이 거리 정확도 수정 2번째 시도(1차: 2026-07-08 이동평균 스무딩, 결과 여전히 큰 오차로 재확인됨). 이번에도 오차가 크게 남으면 값만 또 바꾸지 말고, 코드에 추가된 `[GPS]` 디버그 로그(`adb logcat`)로 실제 accuracy/speed 수치를 받아서 진단할 것
-- 트랙처럼 곡선이 반복되는 코스 + 직선 위주 코스(공원 산책로 등) 양쪽에서 비교 — 곡선 구간에서만 벌어지는 오차인지 구분하기 위함
-- 정확한 바퀴 수를 세면서 뛰고, 트랙의 공인 거리(학교 시설 정보/표지판)와 비교해볼 것 — 나이키런도 100% 정답은 아님
-- 케이던스 상승 엣지 감지 적용 후 체감 페이스와 얼마나 맞는지, threshold `1.2 m/s²` 조정 필요 여부
+- **거리 측정치가 나이키런/공인 트랙거리(270m×바퀴수)와 비슷해졌는지가 최우선 확인 항목** — 세 번째 시도(1차 2026-07-08 이동평균 스무딩, 2차 2026-07-10 EMA로 거리 계산, 3차 2026-07-11 원시 좌표로 되돌림+정확도 컷 완화). 이전 두 번 모두 고친 뒤 결과가 기록에 없어 이번이 실제 검증 첫 기회임. 오차가 크게 남으면 값만 또 바꾸지 말고 `[GPS]` 디버그 로그(`adb logcat`)로 진단할 것
+- **바퀴 수 자동 감지가 실제 바퀴 수와 맞는지** — 트랙 실측 270m 기준. 반경이 고정 12m → 정확도 연동 동적값으로 바뀌었으니 과다/과소 카운트 여부 재확인
+- 케이던스 상승 엣지 감지 + 50Hz 샘플링 적용 후 체감 페이스와 얼마나 맞는지, threshold `1.2 m/s²` 조정 필요 여부
+- TTS 음성 목록 피커로 원하는 음성이 실제로 선택·재생되는지(이전 남/여 토글이 실기기에서 구분 안 되던 문제의 재작업분)
 - 메트로놈 규칙성 — `PlayerMode.lowLatency`(SoundPool) 전환 효과가 실제로 있는지 (2026-07-06 수정, 아직 실외 확인 안 됨)
 - 바람 조건에 따른 오탐지 여부 — 강풍 시 손 흔들림으로 걸음 수 과다 카운트 가능성 (제주 등 강풍 지역에서 특히 확인 필요)
-- 새 경로 지도 디자인(흰 테두리 글로우 라인, 카드형 마커)이 실제 화면에서 의도대로 보이는지
+- 다크 럭셔리 테마가 실외 밝은 햇빛 아래서도 가독성 있는지 (실내 스크린샷으로만 확인됨)
 - 날짜/지역/날씨 2줄 레이아웃이 의도대로 나오는지
