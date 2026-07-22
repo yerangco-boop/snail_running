@@ -90,6 +90,14 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                         height: 20,
                         child: buildKmMarkerChip(m.km, accent),
                       ),
+                    if (record.lapCompletionPoints != null)
+                      for (var i = 0; i < record.lapCompletionPoints!.length; i++)
+                        Marker(
+                          point: record.lapCompletionPoints![i],
+                          width: 34,
+                          height: 20,
+                          child: buildLapMarkerChip(i + 1, accent),
+                        ),
                     Marker(
                       point: record.routePoints!.first,
                       width: 30,

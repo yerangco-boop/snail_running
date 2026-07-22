@@ -2,7 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/app_settings.dart';
+import '../services/file_logger.dart';
 
 class SettingsScreen extends StatefulWidget {
   final AppSettings settings;
@@ -23,8 +25,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Color get _accent => _s.accent;
   Color get _surface => _s.preset.surface;
 
-  // 실기기에 실제로 설치된 versionName/versionCode 확인용 (설정 화면 하단 표시)
-  String? _versionLabel;
+  // 실기기에 실제로 설치된 앱 이름/versionName/versionCode 확인용 (하드코딩이 아니라
+  // 빌드 시점 pubspec.yaml의 version: X.Y.Z+N에서 그대로 채워짐 — 매 빌드마다 자동 갱신)
+  PackageInfo? _packageInfo;
+  String? get _versionLabel => _packageInfo == null
+      ? null
+      : 'v${_packageInfo!.version} (${_packageInfo!.buildNumber})';
 
   @override
   void initState() {
@@ -35,12 +41,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadVersion() async {
     final info = await PackageInfo.fromPlatform();
     if (!mounted) return;
-    setState(() => _versionLabel = 'v${info.version} (${info.buildNumber})');
+    setState(() => _packageInfo = info);
   }
 
   void _update(VoidCallback fn) {
     setState(fn);
     widget.onChanged();
+  }
+
+  // 실외 테스트 진단 로그(GPS/케이던스/바퀴)를 USB 연결 없이도 확인할 수 있도록
+  // 카톡/메일 등 아무 앱으로나 바로 공유
+  Future<void> _shareDebugLog() async {
+    await FileLogger.instance.flushNow();
+    final path = FileLogger.instance.filePath;
+    if (path == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('공유할 로그가 아직 없습니다. 운동을 한 번 진행한 뒤 다시 시도해주세요.')),
+      );
+      return;
+    }
+    await Share.shareXFiles([XFile(path)], text: '달팽이 러닝 디버그 로그');
   }
 
   @override
@@ -137,17 +158,79 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildPresetGrid(),
 
             const SizedBox(height: 28),
-            Center(
-              child: Text(
-                _versionLabel ?? '',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: _s.preset.onBackgroundMuted,
-                ),
-              ),
+
+            // ── 디버그 ────────────────────────────────────────────────────────
+            _sectionHeader("디버그"),
+            const SizedBox(height: 8),
+            _settingCard(
+              icon: Icons.bug_report_outlined,
+              label: "실외 테스트 로그 공유",
+              trailing: Icon(Icons.ios_share, color: _s.preset.grey, size: 18),
+              onTap: _shareDebugLog,
             ),
+
+            const SizedBox(height: 28),
+
+            // ── 정보 ──────────────────────────────────────────────────────────
+            _sectionHeader("정보"),
+            const SizedBox(height: 8),
+            _buildAboutCard(),
           ],
         ),
+      ),
+    );
+  }
+
+  // 앱 아이콘 + 앱 이름 + 버전 + 제작자 표시
+  Widget _buildAboutCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: _s.preset.cardGradient,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _s.preset.cardBorder),
+        boxShadow: _s.preset.cardShadow,
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Image.asset('assets/icon/icon.png', width: 48, height: 48),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("달팽이 러닝",
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: _s.preset.onBackground)),
+                    const SizedBox(height: 2),
+                    Text(
+                      _versionLabel ?? '버전 확인 중...',
+                      style: TextStyle(fontSize: 13, color: _s.preset.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Divider(color: _s.preset.cardBorder, height: 1),
+          const SizedBox(height: 14),
+          Text(
+            "© 2026 홍정표 · Made by 홍정표",
+            style: TextStyle(fontSize: 12, color: _s.preset.grey),
+          ),
+        ],
       ),
     );
   }

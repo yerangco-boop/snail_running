@@ -80,6 +80,40 @@ Polyline buildRoutePolyline(List<LatLng> points, Color color) {
   );
 }
 
+// 바퀴 완료 지점 마커 — km 배지와 구분되도록 작은 깃발 아이콘 + 바퀴 번호
+Widget buildLapMarkerChip(int lapNumber, Color color) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: color, width: 1.5),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.25),
+          blurRadius: 4,
+          offset: const Offset(0, 1),
+        ),
+      ],
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.flag_rounded, size: 11, color: color),
+        const SizedBox(width: 2),
+        Text(
+          '$lapNumber',
+          style: TextStyle(
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 // 출발/도착 지점 마커 — 흰 원 배경 + 그림자 위에 아이콘을 얹은 카드형 스타일
 Widget buildRouteEndpointMarker(IconData icon, Color color) {
   return Container(

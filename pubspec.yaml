@@ -2,7 +2,7 @@ name: snail_running
 description: "A custom slow jogging app for Hong Jeong-pyo"
 publish_to: 'none'
 
-version: 1.0.0+16
+version: 1.0.0+17
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -24,6 +24,9 @@ dependencies:
   http: ^1.1.0
   geocoding: ^3.0.0
   package_info_plus: ^8.0.0
+  shared_preferences: ^2.2.2
+  path_provider: ^2.1.1
+  share_plus: ^7.2.1
 
 dev_dependencies:
   flutter_test:

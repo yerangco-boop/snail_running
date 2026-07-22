@@ -29,6 +29,10 @@ class ClickPlayer {
       ),
     ));
     await _player.setReleaseMode(ReleaseMode.stop);
+    // audioplayers의 volume은 lowLatency(SoundPool) 백엔드에서 그대로
+    // leftVolume/rightVolume에 매핑됨 — 기본값도 1.0(최대)이지만 스피커 재생 시
+    // 소리가 작다는 피드백이 있어 명시적으로 최대치를 강제
+    await _player.setVolume(1.0);
     await _player.setSource(AssetSource('sounds/click.wav'));
     debugPrint('[Metro] native ClickPlayer init done, state=${_player.state}');
   }

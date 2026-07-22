@@ -14,6 +14,8 @@ class WorkoutRecord {
   final int? weatherHumidity;
   final int? weatherPrecipitationPercent;
   final List<LatLng>? routePoints;
+  // 바퀴가 완료(카운트)된 시점의 좌표들 — 이력 상세 지도에 완주 지점 마커로 표시
+  final List<LatLng>? lapCompletionPoints;
 
   const WorkoutRecord({
     this.id,
@@ -28,6 +30,7 @@ class WorkoutRecord {
     this.weatherHumidity,
     this.weatherPrecipitationPercent,
     this.routePoints,
+    this.lapCompletionPoints,
   });
 
   Map<String, dynamic> toMap() => {
@@ -45,6 +48,9 @@ class WorkoutRecord {
     'route_json': (routePoints != null && routePoints!.isNotEmpty)
         ? jsonEncode(routePoints!.map((p) => [p.latitude, p.longitude]).toList())
         : null,
+    'lap_points_json': (lapCompletionPoints != null && lapCompletionPoints!.isNotEmpty)
+        ? jsonEncode(lapCompletionPoints!.map((p) => [p.latitude, p.longitude]).toList())
+        : null,
   };
 
   factory WorkoutRecord.fromMap(Map<String, dynamic> map) => WorkoutRecord(
@@ -61,6 +67,7 @@ class WorkoutRecord {
     weatherPrecipitationPercent:
         (map['weather_precipitation_percent'] as num?)?.toInt(),
     routePoints: _parseRouteJson(map['route_json'] as String?),
+    lapCompletionPoints: _parseRouteJson(map['lap_points_json'] as String?),
   );
 
   static List<LatLng>? _parseRouteJson(String? json) {

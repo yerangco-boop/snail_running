@@ -13,6 +13,7 @@ import '../models/workout_record.dart';
 import '../services/metronome_service.dart';
 import '../services/database_service.dart';
 import '../services/weather_service.dart';
+import '../services/file_logger.dart';
 import '../utils/route_utils.dart';
 
 enum WorkoutState { idle, countdown, running, paused }
@@ -70,6 +71,11 @@ class _HomeScreenState extends State<HomeScreen> {
   int _gpsRejectStreak = 0;
   DateTime? _gpsRejectStreakStart;
   double _lastGpsAccuracyMeters = 20.0;
+  // 이번 운동 전체 누적 거부 포인트 수 — 나이키런 대비 거리 과소측정 진단용.
+  // 매 accepted 포인트 로그에도 함께 남겨, "지금까지 몇 개나 버려졌는지"를
+  // 특정 구간만 보지 않고도 로그 파일 전체에서 추적할 수 있게 함
+  int _gpsRejectedTotal = 0;
+  int _gpsAcceptedTotal = 0;
   // 콜백 간격이 이보다 짧으면 순간속도 계산을 건너뜀 — distanceFilter가 촘촘해서(1m)
   // 아주 짧은 시간차에 콜백이 몰릴 때는 정상적인 GPS 잡음(2~5m)만으로도 순간속도가
   // 크게 튀어 오탐하기 쉬움
@@ -93,7 +99,28 @@ class _HomeScreenState extends State<HomeScreen> {
   static const double _lapReturnRadiusAccuracyFactor = 1.5;
   double get _lapReturnRadiusMeters =>
       math.max(_lapReturnRadiusFloorMeters, _lastGpsAccuracyMeters * _lapReturnRadiusAccuracyFactor);
-  static const double _lapMinAwayMeters = 150.0;
+  // 2026-07-14 실외 테스트: 왕복 260m(편도 130m) 코스에서 바퀴 수가 0으로 나온 원인 —
+  // 150m가 편도 거리(130m)보다 커서 "충분히 멀어짐" 조건 자체가 한 번도 안 걸렸음.
+  // 짧은 왕복 코스도 인식하도록 80m로 하향
+  static const double _lapMinAwayMeters = 80.0;
+
+  // ── 방향 전환(턴어라운드) 감지 — 거리 조건만으로는 반경이 좁아진 지금(80m) GPS 잡음이
+  // 우연히 복귀반경을 스치기만 해도 오탐할 수 있어, "실제로 방향을 바꿔 돌아왔는지"를
+  // 베어링(진행 방향) 변화로 한 번 더 확인. 저속 조깅은 GPS 베어링이 짧은 이동에서 크게
+  // 튀므로, 일정 거리 이상 움직였을 때만 베어링을 갱신해 잡음을 줄임
+  LatLng? _lapLastBearingPoint;
+  double? _lapOutboundBearingDeg;
+  bool _lapTurnaroundConfirmed = false;
+  // 바퀴가 카운트된 지점들 — 지도에 마커로 표시하고 기록 저장 시 함께 보존
+  final List<LatLng> _lapCompletionPoints = [];
+  static const double _lapTurnaroundAngleDeg = 100.0;
+  static const double _lapBearingMinMoveMeters = 3.0;
+
+  double _angleDiffDeg(double a, double b) {
+    var diff = (a - b).abs() % 360;
+    if (diff > 180) diff = 360 - diff;
+    return diff;
+  }
 
   LatLng _applyEma(LatLng raw) {
     final prev = _emaPoint;
@@ -199,6 +226,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    FileLogger.instance.init();
     _tts.setLanguage("ko-KR");
     _applyTtsVoice();
     _appliedMixSetting = _s.mixWithOtherAudio;
@@ -331,9 +359,15 @@ class _HomeScreenState extends State<HomeScreen> {
     _emaPoint = null;
     _gpsRejectStreak = 0;
     _gpsRejectStreakStart = null;
+    _gpsRejectedTotal = 0;
+    _gpsAcceptedTotal = 0;
     _lapStartPoint = null;
     _lapCount = 0;
     _hasLeftLapZone = false;
+    _lapLastBearingPoint = null;
+    _lapOutboundBearingDeg = null;
+    _lapTurnaroundConfirmed = false;
+    _lapCompletionPoints.clear();
     await _startGpsTracking();
     _startStepDetection();
     _launchTimer();
@@ -359,7 +393,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final magRange = _windowMagMin.isFinite
           ? '${_windowMagMin.toStringAsFixed(2)}~${_windowMagMax.toStringAsFixed(2)}'
           : '(이벤트 없음)';
-      debugPrint(
+      FileLogger.instance.log(
         '[Cadence] 5초 요약: 수신이벤트=$eventsInWindow개 임계값통과=$stepsInWindow개 '
         '구간mag범위=${magRange}m/s² 누적걸음=$_totalSteps',
       );
@@ -389,15 +423,15 @@ class _HomeScreenState extends State<HomeScreen> {
           _lastStepAt = now;
           _totalSteps++;
           _recentStepTimestamps.add(now);
-          debugPrint('[Cadence] 임계값 통과 mag=${mag.toStringAsFixed(2)}m/s² totalSteps=$_totalSteps');
+          FileLogger.instance.log('[Cadence] 임계값 통과 mag=${mag.toStringAsFixed(2)}m/s² totalSteps=$_totalSteps');
         }
         _belowStepThreshold = !isAbove;
       },
       onError: (Object error, StackTrace stack) {
-        debugPrint('[Cadence] 가속도계 스트림 에러: $error');
+        FileLogger.instance.log('[Cadence] 가속도계 스트림 에러: $error');
       },
       onDone: () {
-        debugPrint('[Cadence] 가속도계 스트림 종료(onDone) — totalSteps=$_totalSteps 시점에 중단됨');
+        FileLogger.instance.log('[Cadence] 가속도계 스트림 종료(onDone) — totalSteps=$_totalSteps 시점에 중단됨');
       },
       cancelOnError: false,
     );
@@ -450,12 +484,13 @@ class _HomeScreenState extends State<HomeScreen> {
         if (!mounted) return;
         if (pos.accuracy > _gpsAccuracyThresholdMeters) {
           _gpsRejectStreak++;
+          _gpsRejectedTotal++;
           _gpsRejectStreakStart ??= DateTime.now();
           if (_gpsRejectStreak >= 3) {
             final badSec = DateTime.now().difference(_gpsRejectStreakStart!).inSeconds;
-            debugPrint(
+            FileLogger.instance.log(
               '[GPS] 신호불량 $badSec초 지속 (acc=${pos.accuracy.toStringAsFixed(1)}m, '
-              '연속거부=$_gpsRejectStreak회)',
+              '연속거부=$_gpsRejectStreak회, 누적거부=$_gpsRejectedTotal개)',
             );
           }
           return;
@@ -463,6 +498,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _gpsRejectStreak = 0;
         _gpsRejectStreakStart = null;
         _lastGpsAccuracyMeters = pos.accuracy;
+        _gpsAcceptedTotal++;
 
         final rawPoint = LatLng(pos.latitude, pos.longitude);
         final now = pos.timestamp;
@@ -498,10 +534,11 @@ class _HomeScreenState extends State<HomeScreen> {
           final cappedMeters = speedKmh > _maxPlausibleSpeedKmh
               ? (_maxPlausibleSpeedKmh / 3.6) * elapsedSec
               : meters;
-          debugPrint(
+          FileLogger.instance.log(
             '[GPS] acc=${pos.accuracy.toStringAsFixed(1)}m '
             'speed=${speedKmh.toStringAsFixed(1)}km/h '
-            '${speedKmh > _maxPlausibleSpeedKmh ? "capped ${meters.toStringAsFixed(1)}m->${cappedMeters.toStringAsFixed(1)}m" : "meters=${meters.toStringAsFixed(1)}m"}',
+            '${speedKmh > _maxPlausibleSpeedKmh ? "capped ${meters.toStringAsFixed(1)}m->${cappedMeters.toStringAsFixed(1)}m" : "meters=${meters.toStringAsFixed(1)}m"} '
+            '누적거리=${_distanceKm.toStringAsFixed(3)}km 수락=$_gpsAcceptedTotal개 거부=$_gpsRejectedTotal개',
           );
 
           setState(() {
@@ -525,18 +562,70 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // 시작 지점에서 충분히 멀어졌다가(_lapMinAwayMeters) 다시 근처로(_lapReturnRadiusMeters)
-  // 돌아오면 1바퀴로 카운트. 시작 지점은 이번 운동에서 첫 GPS 픽스로 고정(일시정지/재개에도 유지)
+  // 돌아오면 1바퀴로 카운트. 시작 지점은 이번 운동에서 첫 GPS 픽스로 고정(일시정지/재개에도 유지).
+  // 거리 조건에 더해, 아웃존에 있는 동안 진행 방향이 실제로 바뀌었는지(턴어라운드)도 확인해서
+  // 짧아진 반경(80m)에서 GPS 잡음만으로 복귀반경을 스치는 오탐을 줄임
   void _checkLapCompletion(LatLng point) {
     _lapStartPoint ??= point;
     final distFromStart = Geolocator.distanceBetween(
       _lapStartPoint!.latitude, _lapStartPoint!.longitude,
       point.latitude, point.longitude,
     );
+
+    if (_lapLastBearingPoint != null) {
+      final moved = Geolocator.distanceBetween(
+        _lapLastBearingPoint!.latitude, _lapLastBearingPoint!.longitude,
+        point.latitude, point.longitude,
+      );
+      if (moved >= _lapBearingMinMoveMeters) {
+        final bearing = Geolocator.bearingBetween(
+          _lapLastBearingPoint!.latitude, _lapLastBearingPoint!.longitude,
+          point.latitude, point.longitude,
+        );
+        if (_hasLeftLapZone) {
+          _lapOutboundBearingDeg ??= bearing;
+          final diff = _angleDiffDeg(bearing, _lapOutboundBearingDeg!);
+          if (!_lapTurnaroundConfirmed && diff > _lapTurnaroundAngleDeg) {
+            _lapTurnaroundConfirmed = true;
+            FileLogger.instance.log(
+              '[Lap] 방향전환 감지: outbound=${_lapOutboundBearingDeg!.toStringAsFixed(0)}° '
+              'current=${bearing.toStringAsFixed(0)}° diff=${diff.toStringAsFixed(0)}°',
+            );
+          }
+        }
+        _lapLastBearingPoint = point;
+      }
+    } else {
+      _lapLastBearingPoint = point;
+    }
+
     if (distFromStart > _lapMinAwayMeters) {
+      if (!_hasLeftLapZone) {
+        FileLogger.instance.log('[Lap] 아웃존 진입 (시작점에서 ${distFromStart.toStringAsFixed(0)}m)');
+      }
       _hasLeftLapZone = true;
     } else if (_hasLeftLapZone && distFromStart <= _lapReturnRadiusMeters) {
-      _hasLeftLapZone = false;
-      setState(() => _lapCount++);
+      // 방향전환이 확인됐거나, 복귀반경의 절반 이내로 아주 가깝게 돌아온 경우(방향 신호가
+      // 저속/잡음으로 못 잡혔더라도 실제 복귀는 확실한 상황)에만 카운트
+      final veryClose = distFromStart <= _lapReturnRadiusMeters / 2;
+      final turnaroundConfirmed = _lapTurnaroundConfirmed;
+      if (turnaroundConfirmed || veryClose) {
+        _hasLeftLapZone = false;
+        _lapOutboundBearingDeg = null;
+        _lapTurnaroundConfirmed = false;
+        FileLogger.instance.log(
+          '[Lap] 바퀴 완료! dist=${distFromStart.toStringAsFixed(1)}m '
+          'turnaroundConfirmed=$turnaroundConfirmed veryClose=$veryClose lapCount=${_lapCount + 1}',
+        );
+        setState(() {
+          _lapCount++;
+          _lapCompletionPoints.add(point);
+        });
+      } else {
+        FileLogger.instance.log(
+          '[Lap] 복귀반경 진입했지만 방향전환 미확인 — 카운트 보류 (dist=${distFromStart.toStringAsFixed(1)}m)',
+        );
+      }
     }
   }
 
@@ -568,6 +657,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _emaPoint = null;
     _gpsRejectStreak = 0;
     _gpsRejectStreakStart = null;
+    // 일시정지 동안의 이동은 베어링에 반영하면 안 되므로 리셋(바퀴 진행 상태 자체는 유지)
+    _lapLastBearingPoint = null;
     _startGpsTracking();
     _startStepDetection();
     _launchTimer();
@@ -586,6 +677,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _announceWorkoutSummary();
     _saveToDb();
     _showSummaryDialog();
+    // 운동 종료 직후 로그가 파일에 확실히 반영되도록 즉시 flush
+    // (평소엔 3초 주기 버퍼링이라, 종료 직후 바로 공유하면 최신 로그가 누락될 수 있음)
+    FileLogger.instance.flushNow();
   }
 
   void _announceWorkoutSummary() {
@@ -606,6 +700,7 @@ class _HomeScreenState extends State<HomeScreen> {
       weatherHumidity: _workoutStartWeather?.humidity,
       weatherPrecipitationPercent: _workoutStartWeather?.precipitationPercent,
       routePoints: List<LatLng>.from(_routePoints),
+      lapCompletionPoints: List<LatLng>.from(_lapCompletionPoints),
     );
     await DatabaseService.instance.insertWorkout(record);
   }
@@ -645,6 +740,12 @@ class _HomeScreenState extends State<HomeScreen> {
       _lapStartPoint = null;
       _lapCount = 0;
       _hasLeftLapZone = false;
+      _lapLastBearingPoint = null;
+      _lapOutboundBearingDeg = null;
+      _lapTurnaroundConfirmed = false;
+      _lapCompletionPoints.clear();
+      _gpsRejectedTotal = 0;
+      _gpsAcceptedTotal = 0;
     });
   }
 
@@ -1087,6 +1188,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         width: 36,
                         height: 20,
                         child: buildKmMarkerChip(m.km, _s.accent),
+                      ),
+                  ],
+                ),
+              if (_lapCompletionPoints.isNotEmpty)
+                MarkerLayer(
+                  markers: [
+                    for (var i = 0; i < _lapCompletionPoints.length; i++)
+                      Marker(
+                        point: _lapCompletionPoints[i],
+                        width: 34,
+                        height: 20,
+                        child: buildLapMarkerChip(i + 1, _s.accent),
                       ),
                   ],
                 ),

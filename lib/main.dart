@@ -21,11 +21,32 @@ class SnailRunningApp extends StatefulWidget {
 
 class _SnailRunningAppState extends State<SnailRunningApp> {
   final AppSettings _settings = AppSettings();
+  bool _settingsLoaded = false;
 
-  void _onSettingsChanged() => setState(() {});
+  @override
+  void initState() {
+    super.initState();
+    _settings.load().then((_) {
+      if (mounted) setState(() => _settingsLoaded = true);
+    });
+  }
+
+  // 설정이 바뀔 때마다(화면 재렌더 + 영속 저장) 호출됨 — 저장은 fire-and-forget으로
+  // 충분함(SharedPreferences가 내부적으로 쓰기를 큐잉하므로 화면 전환을 막을 필요 없음)
+  void _onSettingsChanged() {
+    setState(() {});
+    _settings.save();
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (!_settingsLoaded) {
+      final p = _settings.preset;
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(backgroundColor: p.background),
+      );
+    }
     final p = _settings.preset;
     final accent = p.accent;
     final grey = p.grey;
