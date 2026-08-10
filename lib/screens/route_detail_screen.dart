@@ -4,7 +4,8 @@ import '../models/app_settings.dart';
 import '../models/workout_record.dart';
 import '../utils/route_utils.dart';
 
-// 이력 카드 탭 시 그날 주행 경로를 지도로 보여주는 화면
+// 이력 카드 탭 시 그날 기록을 한 화면에 모아 보여주는 상세 화면 —
+// 상단 지도(경로 + km/랩 마커) + 통계 카드 + 랩별 기록을 스크롤로 이어 붙임
 class RouteDetailScreen extends StatefulWidget {
   final AppSettings settings;
   final WorkoutRecord record;
@@ -48,81 +49,278 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
     super.dispose();
   }
 
+  ThemePreset get _p => widget.settings.preset;
+  Color get _accent => widget.settings.accent;
+
   @override
   Widget build(BuildContext context) {
-    final preset = widget.settings.preset;
     final record = widget.record;
-    final accent = widget.settings.accent;
 
     return Scaffold(
-      backgroundColor: preset.background,
+      backgroundColor: _p.background,
       appBar: AppBar(
-        backgroundColor: preset.background,
+        backgroundColor: _p.background,
         elevation: 0,
-        iconTheme: IconThemeData(color: preset.onBackground),
+        iconTheme: IconThemeData(color: _p.onBackground),
         title: Text(
-          '${record.formattedDate} 경로',
-          style: TextStyle(color: preset.onBackground, fontSize: 18),
+          '${record.formattedDate} (${record.weekday})',
+          style: TextStyle(color: _p.onBackground, fontSize: 18),
         ),
       ),
-      body: record.hasRoute
-          ? FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: record.routePoints!.first,
-                initialZoom: 15,
-              ),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'snail_running',
-                ),
-                PolylineLayer(
-                  polylines: [buildRoutePolyline(record.routePoints!, accent)],
-                ),
-                MarkerLayer(
-                  markers: [
-                    for (final m in computeKmMarkers(record.routePoints!))
-                      Marker(
-                        point: m.point,
-                        width: 36,
-                        height: 20,
-                        child: buildKmMarkerChip(m.km, accent),
-                      ),
-                    if (record.lapCompletionPoints != null)
-                      for (var i = 0; i < record.lapCompletionPoints!.length; i++)
-                        Marker(
-                          point: record.lapCompletionPoints![i],
-                          width: 34,
-                          height: 20,
-                          child: buildLapMarkerChip(i + 1, accent),
-                        ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+        children: [
+          _buildMapCard(),
+          const SizedBox(height: 16),
+          _sectionHeader('기록'),
+          const SizedBox(height: 8),
+          _buildStatsCard(),
+          if (record.lapCount > 0) ...[
+            const SizedBox(height: 16),
+            _sectionHeader('랩 기록'),
+            const SizedBox(height: 8),
+            _buildLapCard(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ── 지도 ──────────────────────────────────────────────────────────────────
+  Widget _buildMapCard() {
+    final record = widget.record;
+    if (!record.hasRoute) {
+      return Container(
+        height: 160,
+        alignment: Alignment.center,
+        decoration: _cardDecoration(),
+        child: Text('경로 정보 없음',
+            style: TextStyle(color: _p.onBackgroundMuted, fontSize: 15)),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: SizedBox(
+        height: 300,
+        child: FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter: record.routePoints!.first,
+            initialZoom: 15,
+          ),
+          children: [
+            TileLayer(
+              urlTemplate:
+                  'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+              userAgentPackageName: 'snail_running',
+            ),
+            PolylineLayer(
+              polylines: [buildRoutePolyline(record.routePoints!, _accent)],
+            ),
+            MarkerLayer(
+              markers: [
+                for (final m in computeKmMarkers(record.routePoints!))
+                  Marker(
+                    point: m.point,
+                    width: 36,
+                    height: 20,
+                    child: buildKmMarkerChip(m.km, _accent),
+                  ),
+                if (record.lapCompletionPoints != null)
+                  for (var i = 0; i < record.lapCompletionPoints!.length; i++)
                     Marker(
-                      point: record.routePoints!.first,
-                      width: 30,
-                      height: 30,
-                      child: buildRouteEndpointMarker(Icons.flag_rounded, accent),
+                      point: record.lapCompletionPoints![i],
+                      width: 34,
+                      height: 20,
+                      child: buildLapMarkerChip(i + 1, _accent),
                     ),
-                    Marker(
-                      point: record.routePoints!.last,
-                      width: 30,
-                      height: 30,
-                      child: buildRouteEndpointMarker(Icons.sports_score_rounded, accent),
+                Marker(
+                  point: record.routePoints!.first,
+                  width: 30,
+                  height: 30,
+                  child: buildRouteEndpointMarker(Icons.flag_rounded, _accent),
+                ),
+                Marker(
+                  point: record.routePoints!.last,
+                  width: 30,
+                  height: 30,
+                  child:
+                      buildRouteEndpointMarker(Icons.sports_score_rounded, _accent),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── 통계 ──────────────────────────────────────────────────────────────────
+  Widget _buildStatsCard() {
+    final r = widget.record;
+    final lapKm = r.estimatedLapDistanceKm(widget.settings.lapDistanceMeters);
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: _cardDecoration(),
+      child: Column(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                r.distanceKm.toStringAsFixed(2),
+                style: TextStyle(
+                  fontSize: 48,
+                  fontWeight: FontWeight.w700,
+                  color: _p.surface,
+                  height: 1.0,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 6, bottom: 6),
+                child: Text('km',
+                    style: TextStyle(fontSize: 16, color: _p.grey)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text('GPS 측정 거리',
+              style: TextStyle(fontSize: 11, color: _p.grey, letterSpacing: 1)),
+          const SizedBox(height: 18),
+          Divider(color: _p.cardBorder, height: 1),
+          const SizedBox(height: 16),
+          _statRow('시간', r.formattedDuration),
+          _statRow('평균 페이스', '${r.formattedPace}/km'),
+          _statRow('평균 케이던스', '${r.avgCadence} spm'),
+          _statRow('칼로리', '${r.caloriesBurned.toStringAsFixed(0)} kcal'),
+          if (r.lapCount > 0)
+            _statRow('랩 기준 추정 거리', '${lapKm.toStringAsFixed(2)} km'),
+          _statRow('당시 날씨', r.weatherSummary),
+        ],
+      ),
+    );
+  }
+
+  Widget _statRow(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: TextStyle(fontSize: 13, color: _p.grey)),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: _p.onBackground,
+              ),
+            ),
+          ],
+        ),
+      );
+
+  // ── 랩 기록 ───────────────────────────────────────────────────────────────
+  Widget _buildLapCard() {
+    final r = widget.record;
+    final intervals = r.lapIntervalSeconds;
+    final lapMeters = widget.settings.lapDistanceMeters;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: _cardDecoration(),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('랩',
+                    style: TextStyle(fontSize: 11, color: _p.grey, letterSpacing: 1)),
+              ),
+              Expanded(
+                child: Text('누적 거리',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(fontSize: 11, color: _p.grey, letterSpacing: 1)),
+              ),
+              Expanded(
+                child: Text('구간 시간',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(fontSize: 11, color: _p.grey, letterSpacing: 1)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Divider(color: _p.cardBorder, height: 1),
+          if (intervals.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                '${r.lapCount}바퀴 (구간 시간은 v18 이후 기록부터 표시됩니다)',
+                style: TextStyle(fontSize: 13, color: _p.grey),
+              ),
+            )
+          else
+            for (var i = 0; i < intervals.length; i++)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text('${i + 1}',
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: _accent)),
+                    ),
+                    Expanded(
+                      child: Text(
+                        '${((i + 1) * lapMeters / 1000).toStringAsFixed(2)} km',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(fontSize: 14, color: _p.onBackground),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        _fmtDuration(intervals[i]),
+                        textAlign: TextAlign.right,
+                        style: TextStyle(fontSize: 14, color: _p.onBackground),
+                      ),
                     ),
                   ],
                 ),
-              ],
-            )
-          : Center(
-              child: Text(
-                '경로 정보 없음',
-                style: TextStyle(
-                  color: preset.onBackgroundMuted,
-                  fontSize: 16,
-                ),
               ),
-            ),
+        ],
+      ),
     );
   }
+
+  String _fmtDuration(int seconds) {
+    final m = seconds ~/ 60, s = seconds % 60;
+    return "$m:${s.toString().padLeft(2, '0')}";
+  }
+
+  // ── 공통 ──────────────────────────────────────────────────────────────────
+  Widget _sectionHeader(String text) => Padding(
+        padding: const EdgeInsets.only(left: 8),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 12,
+            color: _p.onBackgroundMuted,
+            letterSpacing: 1.2,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+
+  BoxDecoration _cardDecoration() => BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: _p.cardGradient,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _p.cardBorder),
+        boxShadow: _p.cardShadow,
+      );
 }

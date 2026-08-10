@@ -271,8 +271,15 @@ class HistoryScreenState extends State<HistoryScreen> {
                       grey),
                   if (record.lapCount > 0) ...[
                     const SizedBox(width: 12),
-                    _statChip(Icons.replay_circle_filled_outlined,
-                        "${record.lapCount}바퀴", surface, grey),
+                    // GPS 거리와 나란히 "랩 × 코스 거리" 추정치를 병기 — 둘을 비교하면
+                    // GPS 거리가 얼마나 벗어났는지 앱 안에서 바로 확인할 수 있음
+                    _statChip(
+                      Icons.replay_circle_filled_outlined,
+                      "${record.lapCount}바퀴 (추정 "
+                      "${record.estimatedLapDistanceKm(widget.settings.lapDistanceMeters).toStringAsFixed(2)}km)",
+                      surface,
+                      grey,
+                    ),
                   ],
                 ],
               ),

@@ -58,7 +58,9 @@ Available voices are entirely dependent on the browser/OS — on desktop Chrome 
 ### Distance tracking
 Distance is measured from real GPS movement via `Geolocator.getPositionStream` (accuracy: high, `distanceFilter: 1`), accumulated in `HomeScreen._startGpsTracking()` **from raw (unsmoothed) coordinates** — an EMA-smoothed copy is kept separately purely for route-line/map-marker display, after an earlier attempt (2026-07-10) that fed the smoothed point into the distance calc itself turned out to systematically shorten distance on curved/looped courses (see git history on `_startGpsTracking` if this regresses). Readings with `accuracy` worse than `_gpsAccuracyThresholdMeters` (35m, loosened from 25m on 2026-07-11) are ignored; 3+ consecutive rejections log a `[GPS] 신호불량 N초 지속` line for diagnosis. Instantaneous speed over `_maxPlausibleSpeedKmh` (25km/h) is capped rather than discarded, and the reference point always advances (avoids the old "skip-and-chord" bug that cut corners on repeated-loop courses). The stream starts on workout start/resume and is cancelled on pause/stop. `AndroidManifest.xml` must declare `ACCESS_FINE_LOCATION`/`ACCESS_COARSE_LOCATION` — these were missing entirely until 2026-07-03, which silently broke all location features on real devices (web/desktop testing didn't surface it since the browser prompts separately).
 
-Lap counting (`_checkLapCompletion`) counts a loop when the runner moves `_lapMinAwayMeters` (150m) from the start point and then returns within a dynamic radius `max(20m, latest GPS accuracy × 1.5)` — the radius scales with signal quality since a fixed tight radius missed real returns when accuracy was poor.
+**Background tracking (added 2026-08-10, v18) is the load-bearing part of distance accuracy** — not the accumulation algorithm. Until v17 the app ran with "while in use" location permission, so the OS cut the GPS/accelerometer streams the moment the screen turned off, losing whole stretches of the run (measured -7.9~-54.7%, worsening with run length). `_startGpsTracking` now requests `always` in the Android-required two-step order (whileInUse first, then escalate) and passes an `AndroidSettings` with `foregroundNotificationConfig` so the run is a foreground service; `wakelock_plus` additionally keeps the screen on by default. The `AndroidSettings` reference lives behind the `location_settings_factory.dart` conditional import so web builds don't pull in `geolocator_android`. **If distance under-measurement is ever reported again, first check the `[Perm]` log line says `always` and that a "러닝 기록 중" notification appeared — don't touch the accumulation math before ruling those out.**
+
+Lap counting (`_checkLapCompletion`) counts a loop when the runner moves `_lapMinAwayMeters` (40m) from the start point and then returns within `_lapReturnRadiusMeters` (18m), with a 60-second minimum interval as hysteresis against double-counting. These numbers replaced 150m/80m on 2026-08-10: the real course is a ~240m loop, which as an equilateral-triangle approximation has 80m sides, so the *maximum* straight-line distance from the start vertex is 80.0m — the old `> 80m` test was mathematically unreachable and laps always read 0. A bearing-based "turnaround confirmation" gate existed briefly in v17 and was removed, since low-speed jogging makes GPS bearing too noisy and it suppressed real laps more than the 60s hysteresis suppresses false ones. The `[LAP]` log records current/max distance-from-start per check, so the max value tells you the course size if the thresholds need retuning again.
 
 ### Data persistence
 `DatabaseService` is a singleton wrapping `sqflite` (`snail_running.db`). All methods guard against web with `kIsWeb` checks (sqflite has no web support). Schema: single `workouts` table — `id, date, distance_km, duration_seconds, avg_pace_sec`.
@@ -168,6 +170,33 @@ OpenStreetMap via `flutter_map` + CartoDB light tiles (`basemaps.cartocdn.com/li
 - [x] 메트로놈 스피커 음량 개선 (2026-07-22, versionCode 17) — `assets/sounds/click.wav`가 피크는 이미 -0.21dBFS(최대치)였지만 파형이 아주 짧은 임펄스(크레스트 팩터 17dB)라 RMS(체감 음량)가 낮았던 것이 원인. 단순 게인 증폭은 이미 최대치라 의미 없어, 다이나믹 컴프레션(threshold -18dB, ratio 5:1) + 메이크업 게인으로 피크는 그대로 두고 RMS를 +7.7dB 높임. `click_player_stub.dart`에도 `_player.setVolume(1.0)` 명시적으로 추가(기존에도 기본값 1.0이었지만 방어적으로 고정)
 - [x] 버전 표시 확인 + "정보" 섹션 추가 (2026-07-22, versionCode 17) — 하단 버전 표시는 이미 2026-07-14부터 `package_info_plus`로 동적 조회 중이었음(하드코딩 아님, 확인만 함). 앱 아이콘 + 앱 이름 + 버전 + "© 2026 홍정표 · Made by 홍정표"를 보여주는 "정보" 카드 섹션 추가
 - [x] 지도에 바퀴 완료 지점 마커 추가 (2026-07-22, versionCode 17) — 바퀴가 카운트되는 좌표를 `_lapCompletionPoints`에 저장, `route_utils.dart`의 `buildLapMarkerChip`(깃발 아이콘 + 바퀴 번호)으로 실시간 주행 지도·이력 상세 지도 양쪽에 표시. `WorkoutRecord.lapCompletionPoints`로 DB 저장(DB v6, `lap_points_json` 컬럼)
+
+- [x] **백그라운드 위치 유실 근본 원인 확정 및 수정 (2026-08-10, versionCode 18)** — 21세션 교차검증에서 **시간 오차는 +18초(정상)인데 거리만 -7.9~-54.7%로 불규칙 유실**되고, 세션 26~29분은 평균 -16.2% / 33~37분은 -31.9%로 **러닝 시간에 비례해 악화**되는 패턴 확인. 원인은 알고리즘이 아니라 **위치 권한이 "앱 사용 중에만 허용"이라 화면이 꺼지는 순간 GPS/가속도계 스트림이 OS에 의해 차단**된 것 + 배터리 최적화의 추가 억제. 처방: ①`ACCESS_BACKGROUND_LOCATION`/`FOREGROUND_SERVICE(_LOCATION)`/`POST_NOTIFICATIONS` 권한과 `GeolocatorLocationService`(foregroundServiceType=location) 선언 추가 ②`AndroidSettings.foregroundNotificationConfig`로 러닝 중 포그라운드 서비스 승격(알림 "달팽이 러닝 / 러닝 기록 중", `enableWakeLock`+`setOngoing`) ③whileInUse→always 단계적 권한 요청 + 미승인 시 시작 화면 경고 배너 & 설정 딥링크 ④`wakelock_plus`로 러닝 중 화면 켜두기(설정 토글, 기본 ON). **거리 계산 알고리즘 자체는 이번에 손대지 않음** — 원인이 알고리즘이 아니었음이 데이터로 확정됐기 때문
+  - 웹 빌드가 깨지지 않도록 `AndroidSettings`(geolocator_android 전용) 참조는 `location_settings_factory.dart` 조건부 import로 분리 — 기존 `database_service`/`click_player`와 동일 패턴
+- [x] 랩 카운트 임계값 재산정 (2026-08-10, versionCode 18) — **기존 80m가 물리적으로 도달 불가였던 것이 랩이 항상 0이던 원인.** 실측 트랙 둘레 240~250m를 정삼각형 근사하면 한 변 80~83m이고, 시작점(꼭짓점)에서 코스상 최대 직선 이격거리는 반대편 꼭짓점까지의 80.0m(둘레 240m 기준) → 조건이 `> 80m`(초과)라 절대 안 걸림. **40m/복귀 18m/최소 랩 간격 60초**로 교체. v17의 베어링 기반 "방향전환 확인" 게이트는 제거(저속 조깅에서 베어링 잡음으로 실제 랩을 억제할 위험이 60초 히스테리시스보다 컸음). `[LAP]` 로그에 현재이격/최대이격/경과시간/판정결과 기록 — **최대이격 값이 코스 크기를 알려주므로 다음 재조정의 근거가 됨**
+- [x] 케이던스 임계값 하향 + 저역통과 필터 (2026-08-10, versionCode 18) — 나이키 132~148spm 대비 달팽이는 2~7spm으로 사실상 미감지. 폰을 손에 들고 뛰면 손이 완충 역할을 해 기기 진폭이 작음 → 임계값 **1.2 → 0.35 m/s²** 하향, 3Hz 1차 IIR 저역통과(alpha=0.2738 @50Hz)로 고주파 잡음 제거 후 그 결과에 임계값 적용(러닝 160spm=2.67Hz라 걸음 성분은 보존됨). **평균 케이던스 분모에서 0spm 구간 제외**(`_cadenceActiveSeconds`) — 스트림 중단 구간이 평균을 27spm까지 끌어내리던 문제. `[CADENCE]` 10초 요약 로깅
+- [x] 칼로리 MET 동적 산출 (2026-08-10, versionCode 18) — **신규 발견 버그**: 12세션 중 8세션이 kcal/분 7.18~7.21로 고정 수렴, 26'14"/km와 11'20"/km의 분당 칼로리가 동일했음. 원인은 MET를 8~12분/km 구간에서 6~7로만 선형 보간해 폭이 너무 좁았던 것. 구간별 테이블(≤6분:10.0 / ≤8분:8.3 / ≤10분:6.0 / ≤13분:4.5 / 초과:3.5)로 교체 → 검산 결과 kcal/분이 11.67/9.68/7.00/5.25/4.08로 페이스를 실제 반영. 체중 기본값 60→70kg
+- [x] 랩 기반 거리 병기 (2026-08-10, versionCode 18) — 이력 카드/상세에 "N바퀴 (추정 X km)"를 GPS 거리와 나란히 표시해 **앱 자체로 GPS 정확도를 교차검증**할 수 있게 함. 랩당 거리는 설정에서 조정(기본 240m = 실측 트랙 둘레)
+- [x] 이력 상세 화면 통합 + 랩 스플릿 (2026-08-10, versionCode 18) — `route_detail_screen`을 지도만 있던 화면에서 **지도 + 통계 카드 + 랩별 구간 기록**을 한 화면에 스크롤로 보여주도록 재구성. 랩 완료 시점의 누적 경과초를 `WorkoutRecord.lapSplitSeconds`로 저장(DB v7, `lap_splits_json`)해 랩별 구간 시간 표시
+- [x] 보안 점검 (2026-08-10) — 저장소가 public이므로 확인: `.gitignore`에 `*.jks`/`*.keystore`/`android/key.properties` 등록됨, **전체 커밋 이력에 키스토어·시크릿 파일 추가된 적 없음**, API 키도 `String.fromEnvironment`로만 주입(하드코딩 없음). 이상 없음
+- [x] TEST_CHECKLIST.md 신설 (2026-08-10) — 실외 테스트 12항목 + v18 핵심 검증 + 로그 태그별 의미 정리. **테스트 전 "항상 허용" 권한과 배터리 최적화 해제를 먼저 확인**하도록 0번 섹션에 명시
+
+## 2026-08-10 작업 노트 (versionCode 18, 다음 실외 테스트에서 확인)
+
+### [이번 세션 변경 — 전부 실기기 미검증]
+노트북에 Flutter가 없어 이번에도 `dart analyze`/`flutter run` 없이 텍스트 검증(괄호 균형 + pub.dev API 문서 대조)만 하고 커밋함.
+`ForegroundNotificationConfig`(notificationTitle/notificationText/enableWakeLock/setOngoing)와 `AndroidSettings`(accuracy/distanceFilter/foregroundNotificationConfig)는 pub.dev 문서로 시그니처 확인함.
+
+- **최우선 확인**: 러닝 시작 시 알림창에 "달팽이 러닝 / 러닝 기록 중"이 뜨는지 → 안 뜨면 포그라운드 서비스가 안 붙은 것
+- **화면 끄고 5분 이상** 뛴 뒤 그 구간 거리가 누적되는지 (이번 수정의 핵심)
+- 랩 카운트가 실제 바퀴 수와 맞는지 — 안 맞으면 `[LAP]` 로그의 `최대이격` 값으로 임계값 재조정
+- 케이던스가 나이키와 비슷해지는지 — `[CADENCE]` 로그의 `수신이벤트`가 0인 구간이 있으면 스트림 문제, 없는데 `임계값통과`가 0이면 0.35도 여전히 높은 것
+- 칼로리가 페이스에 따라 달라지는지
+- 신규 패키지 3개(`geolocator_android` 명시 승격, `wakelock_plus`, DB v7 마이그레이션)가 실기기에서 정상 동작하는지
+
+### [이전 버전에서 넘어온 미검증 항목]
+v17에서 넣었지만 아직 실외에서 확인 못 한 것들 — TEST_CHECKLIST.md의 12항목 표로 함께 점검할 것:
+설정 영속 저장 / 로그 파일 공유 버튼 / 메트로놈 컴프레션 체감 음량 / 바퀴 마커 표시
 
 ## 2026-07-22 작업 노트 (versionCode 17, 다음 실외 테스트 전 확인 필요)
 

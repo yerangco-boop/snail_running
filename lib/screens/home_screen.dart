@@ -12,8 +12,10 @@ import '../models/app_settings.dart';
 import '../models/workout_record.dart';
 import '../services/metronome_service.dart';
 import '../services/database_service.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/weather_service.dart';
 import '../services/file_logger.dart';
+import '../services/location_settings_factory.dart';
 import '../utils/route_utils.dart';
 
 enum WorkoutState { idle, countdown, running, paused }
@@ -34,7 +36,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   WorkoutState _workoutState = WorkoutState.idle;
   double _distanceKm = 0.0;
   int _seconds = 0;
@@ -93,34 +95,26 @@ class _HomeScreenState extends State<HomeScreen> {
   LatLng? _lapStartPoint;
   int _lapCount = 0;
   bool _hasLeftLapZone = false;
-  // 복귀 판정 반경은 고정값 대신 최근 GPS 정확도에 연동 — 신호가 나쁠 때(정확도 수치가
-  // 큼) 좁은 고정 반경으로는 실제 복귀도 놓치므로, 정확도가 나쁠수록 반경도 함께 넓어지게 함
-  static const double _lapReturnRadiusFloorMeters = 20.0;
-  static const double _lapReturnRadiusAccuracyFactor = 1.5;
-  double get _lapReturnRadiusMeters =>
-      math.max(_lapReturnRadiusFloorMeters, _lastGpsAccuracyMeters * _lapReturnRadiusAccuracyFactor);
-  // 2026-07-14 실외 테스트: 왕복 260m(편도 130m) 코스에서 바퀴 수가 0으로 나온 원인 —
-  // 150m가 편도 거리(130m)보다 커서 "충분히 멀어짐" 조건 자체가 한 번도 안 걸렸음.
-  // 짧은 왕복 코스도 인식하도록 80m로 하향
-  static const double _lapMinAwayMeters = 80.0;
+  // ── 임계값 재산정 (2026-08-10) ──────────────────────────────────────────────
+  // 실측 트랙 둘레 240~250m를 정삼각형으로 근사하면 한 변이 80~83m.
+  // 시작점(꼭짓점)에서 코스상 가장 먼 지점까지의 직선거리는 "반대편 꼭짓점 = 한 변(80m)"이고
+  // 반대편 변의 중점까지는 삼각형 높이(69m)임. 즉 기존 임계값 80m는 둘레 240m에서
+  // 물리적으로 초과 불가(정확히 80.0m가 최대)라 "충분히 멀어짐" 조건이 영영 안 걸렸음
+  // → 랩이 항상 0으로 나오던 근본 원인. 여유를 두고 40m로 하향.
+  static const double _lapMinAwayMeters = 40.0;
+  // 복귀 판정 반경: 아웃존(40m)의 절반 이하로 두어 히스테리시스를 확보
+  static const double _lapReturnRadiusMeters = 18.0;
+  // 같은 지점을 GPS 잡음으로 여러 번 스쳐도 중복 카운트되지 않도록 하는 최소 랩 간격
+  static const int _lapMinIntervalSeconds = 60;
 
-  // ── 방향 전환(턴어라운드) 감지 — 거리 조건만으로는 반경이 좁아진 지금(80m) GPS 잡음이
-  // 우연히 복귀반경을 스치기만 해도 오탐할 수 있어, "실제로 방향을 바꿔 돌아왔는지"를
-  // 베어링(진행 방향) 변화로 한 번 더 확인. 저속 조깅은 GPS 베어링이 짧은 이동에서 크게
-  // 튀므로, 일정 거리 이상 움직였을 때만 베어링을 갱신해 잡음을 줄임
-  LatLng? _lapLastBearingPoint;
-  double? _lapOutboundBearingDeg;
-  bool _lapTurnaroundConfirmed = false;
   // 바퀴가 카운트된 지점들 — 지도에 마커로 표시하고 기록 저장 시 함께 보존
   final List<LatLng> _lapCompletionPoints = [];
-  static const double _lapTurnaroundAngleDeg = 100.0;
-  static const double _lapBearingMinMoveMeters = 3.0;
-
-  double _angleDiffDeg(double a, double b) {
-    var diff = (a - b).abs() % 360;
-    if (diff > 180) diff = 360 - diff;
-    return diff;
-  }
+  // 각 랩이 완료된 시점의 누적 경과초 — 이력 상세에서 랩별 구간 기록으로 표시
+  final List<int> _lapSplitSeconds = [];
+  // 이번 랩에서 시작점으로부터 실제로 도달한 최대 이격거리(진단 로그용 — 임계값이
+  // 코스 크기에 맞는지 로그만 보고 판단할 수 있게 함)
+  double _lapMaxAwayMeters = 0.0;
+  int _lastLapSeconds = 0;
 
   LatLng _applyEma(LatLng raw) {
     final prev = _emaPoint;
@@ -140,8 +134,21 @@ class _HomeScreenState extends State<HomeScreen> {
   int _lapStepsAtLastKm = 0;
   DateTime? _lastStepAt;
   bool _belowStepThreshold = true; // 상승 엣지 감지용: 직전 샘플이 임계값 이하였는지
-  static const double _stepMagnitudeThreshold = 1.2; // m/s², 실기기 테스트 후 조정 필요할 수 있음
+  // 2026-08-10 하향: 폰을 손에 들고 뛰면 손이 완충 역할을 해서 기기에 실제로 실리는
+  // 진폭이 작고, 아래 저역통과 필터가 피크를 추가로 깎음. 1.2 m/s²에서는 실외 러닝 내내
+  // 임계값 통과가 거의 안 잡혀 케이던스가 2~7spm(나이키 132~148spm)으로 측정됐음
+  static const double _stepMagnitudeThreshold = 0.35; // m/s²
   static const int _minStepIntervalMs = 250; // 분당 최대 240보 한도로 노이즈 중복 감지 방지
+
+  // 3Hz 1차 저역통과(IIR) — 팔 흔들림/노면 충격의 고주파 성분을 걷어내고 걸음 주기만 남김.
+  // alpha = dt/(RC+dt), RC = 1/(2πfc). 50Hz 샘플링(dt=0.02s), fc=3Hz → 0.2738.
+  // 러닝 케이던스 160spm은 2.67Hz라 컷오프 아래이므로 걸음 신호 자체는 보존됨
+  static const double _stepFilterAlpha = 0.2738;
+  double _filteredMag = 0.0;
+
+  // 평균 케이던스 계산용 — 스트림이 끊기거나 정지해 있던 0spm 구간을 분모에서 빼야
+  // 실제로 뛴 구간의 평균이 나옴(예전엔 이 구간들이 평균을 27spm까지 끌어내렸음)
+  int _cadenceActiveSeconds = 0;
 
   // 진단용: 실제로 들어온 가속도계 이벤트 수 vs 임계값을 넘은 수를 구분해서 남겨야
   // "스트림 자체가 죽었다"와 "임계값이 너무 높아 걸음을 못 잡는다"를 로그로 구별할 수 있음
@@ -226,6 +233,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     FileLogger.instance.init();
     _tts.setLanguage("ko-KR");
     _applyTtsVoice();
@@ -237,6 +245,13 @@ class _HomeScreenState extends State<HomeScreen> {
       _reverseGeocode();
       _fetchWeather();
     });
+  }
+
+  // 사용자가 설정 앱에서 "항상 허용"으로 바꾸고 돌아오면 경고 배너가 즉시 사라지도록
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) _refreshPermissionStatus();
   }
 
   @override
@@ -303,15 +318,54 @@ class _HomeScreenState extends State<HomeScreen> {
     _cadenceDiagnosticTimer?.cancel();
     _metronome.dispose();
     _mapController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    WakelockPlus.disable();
     super.dispose();
+  }
+
+  // 러닝 중 화면 꺼짐 방지 — 설정에서 끌 수 있게 하되 기본은 ON
+  Future<void> _applyWakelock(bool enable) async {
+    try {
+      if (enable && _s.keepScreenOn) {
+        await WakelockPlus.enable();
+      } else {
+        await WakelockPlus.disable();
+      }
+    } catch (e) {
+      debugPrint('[Wakelock] 적용 실패: $e');
+    }
+  }
+
+  // ── 위치 권한 ─────────────────────────────────────────────────────────────
+  // Android 11+는 "항상 허용"(always)을 한 번의 다이얼로그로 못 받음 — 먼저 whileInUse를
+  // 받은 뒤 별도 요청을 해야 하고, 그마저도 대부분 기기에서 시스템이 다이얼로그 대신
+  // 앱 설정으로 유도함. 그래서 "단계적 요청 시도 + 실패 시 설정 딥링크 배너" 두 경로를 모두 둠.
+  LocationPermission? _locationPermission;
+  bool get _hasAlwaysLocation => _locationPermission == LocationPermission.always;
+
+  Future<LocationPermission> _ensureLocationPermission({bool wantAlways = false}) async {
+    var perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) {
+      perm = await Geolocator.requestPermission(); // 1단계: whileInUse
+    }
+    // 2단계: whileInUse가 승인된 뒤에만 always 승격 요청이 의미 있음(Android 11+ 요구 순서)
+    if (wantAlways && perm == LocationPermission.whileInUse) {
+      final upgraded = await Geolocator.requestPermission();
+      if (upgraded == LocationPermission.always) perm = upgraded;
+    }
+    if (mounted) setState(() => _locationPermission = perm);
+    FileLogger.instance.log('[Perm] 위치 권한 상태: $perm (wantAlways=$wantAlways)');
+    return perm;
+  }
+
+  Future<void> _refreshPermissionStatus() async {
+    final perm = await Geolocator.checkPermission();
+    if (mounted) setState(() => _locationPermission = perm);
   }
 
   Future<void> _fetchLocation() async {
     try {
-      var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
+      final perm = await _ensureLocationPermission();
       if (perm != LocationPermission.always && perm != LocationPermission.whileInUse) return;
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
@@ -351,6 +405,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _doStartWorkout() async {
     setState(() => _workoutState = WorkoutState.running);
+    _applyWakelock(true);
     _workoutStartWeather = _weather;
     _announceWorkoutStart();
     _metronome.start(_s.bpm);
@@ -364,10 +419,10 @@ class _HomeScreenState extends State<HomeScreen> {
     _lapStartPoint = null;
     _lapCount = 0;
     _hasLeftLapZone = false;
-    _lapLastBearingPoint = null;
-    _lapOutboundBearingDeg = null;
-    _lapTurnaroundConfirmed = false;
     _lapCompletionPoints.clear();
+    _lapSplitSeconds.clear();
+    _lapMaxAwayMeters = 0.0;
+    _lastLapSeconds = 0;
     await _startGpsTracking();
     _startStepDetection();
     _launchTimer();
@@ -381,21 +436,23 @@ class _HomeScreenState extends State<HomeScreen> {
     _accelEventCount = 0;
     _windowMagMin = double.infinity;
     _windowMagMax = 0;
+    _filteredMag = 0.0;
 
-    // 5초마다 "수신 이벤트 수 vs 임계값 통과 수 vs 그 구간 mag 범위"를 요약 — 스트림이
+    // 10초마다 "수신 이벤트 수 vs 임계값 통과 수 vs 그 구간 mag 범위"를 요약 — 스트림이
     // 죽었다면 이벤트=0으로 바로 드러나고, 스트림은 살아있는데 걸음만 못 잡는 거라면
-    // mag 최댓값이 임계값(1.2) 근처에서 못 넘는 패턴으로 드러남
+    // mag 최댓값이 임계값 근처에서 못 넘는 패턴으로 드러남
     var lastLoggedEventCount = 0;
     var lastLoggedSteps = _totalSteps;
-    _cadenceDiagnosticTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _cadenceDiagnosticTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       final eventsInWindow = _accelEventCount - lastLoggedEventCount;
       final stepsInWindow = _totalSteps - lastLoggedSteps;
       final magRange = _windowMagMin.isFinite
-          ? '${_windowMagMin.toStringAsFixed(2)}~${_windowMagMax.toStringAsFixed(2)}'
+          ? '${_windowMagMin.toStringAsFixed(3)}~${_windowMagMax.toStringAsFixed(3)}'
           : '(이벤트 없음)';
       FileLogger.instance.log(
-        '[Cadence] 5초 요약: 수신이벤트=$eventsInWindow개 임계값통과=$stepsInWindow개 '
-        '구간mag범위=${magRange}m/s² 누적걸음=$_totalSteps',
+        '[CADENCE] 10초 요약 | 수신이벤트=$eventsInWindow개 임계값통과=$stepsInWindow개 '
+        '구간filtered_mag범위=${magRange}m/s² (임계값=$_stepMagnitudeThreshold) '
+        '실시간=${_liveCadenceSpm}spm 누적걸음=$_totalSteps 활성구간=${_cadenceActiveSeconds}s',
       );
       lastLoggedEventCount = _accelEventCount;
       lastLoggedSteps = _totalSteps;
@@ -408,7 +465,10 @@ class _HomeScreenState extends State<HomeScreen> {
     ).listen(
       (e) {
         _accelEventCount++;
-        final mag = math.sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
+        final rawMag = math.sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
+        // 3Hz 저역통과로 고주파 잡음 제거 후 그 결과에 임계값을 적용
+        _filteredMag += _stepFilterAlpha * (rawMag - _filteredMag);
+        final mag = _filteredMag;
         if (mag < _windowMagMin) _windowMagMin = mag;
         if (mag > _windowMagMax) _windowMagMax = mag;
         final now = DateTime.now();
@@ -423,15 +483,14 @@ class _HomeScreenState extends State<HomeScreen> {
           _lastStepAt = now;
           _totalSteps++;
           _recentStepTimestamps.add(now);
-          FileLogger.instance.log('[Cadence] 임계값 통과 mag=${mag.toStringAsFixed(2)}m/s² totalSteps=$_totalSteps');
         }
         _belowStepThreshold = !isAbove;
       },
       onError: (Object error, StackTrace stack) {
-        FileLogger.instance.log('[Cadence] 가속도계 스트림 에러: $error');
+        FileLogger.instance.log('[CADENCE] 가속도계 스트림 에러: $error');
       },
       onDone: () {
-        FileLogger.instance.log('[Cadence] 가속도계 스트림 종료(onDone) — totalSteps=$_totalSteps 시점에 중단됨');
+        FileLogger.instance.log('[CADENCE] 가속도계 스트림 종료(onDone) — totalSteps=$_totalSteps 시점에 중단됨');
       },
       cancelOnError: false,
     );
@@ -443,18 +502,28 @@ class _HomeScreenState extends State<HomeScreen> {
     return (steps / (elapsedSeconds / 60.0)).round();
   }
 
+  // 평균 케이던스 — 걸음이 전혀 안 잡힌 구간(스트림 중단/정지)을 분모에서 제외.
+  // 활성 구간이 아예 없으면 전체 시간 기준으로 폴백
+  int get _avgCadenceSpm => _cadenceActiveSeconds > 0
+      ? _cadenceSpm(_totalSteps, _cadenceActiveSeconds)
+      : _cadenceSpm(_totalSteps, _seconds);
+
   String _fmtMinSec(num totalSeconds) {
     final s = totalSeconds.toInt();
     final m = s ~/ 60, sec = s % 60;
     return '$m분 $sec초';
   }
 
-  // 슬로우 조깅 페이스(8~12분/km) 구간을 MET 6~7로 선형 보간 (8분=7, 12분=6)
+  // 페이스 구간별 MET. 기존에는 8~12분/km를 MET 6~7로만 선형 보간해서 폭이 너무 좁았고,
+  // 그 결과 12세션 중 8세션이 kcal/분 7.18~7.21로 사실상 고정 수렴 — 26'14"/km 세션과
+  // 11'20"/km 세션의 분당 칼로리가 같게 나오는 명백한 결함이 있었음.
+  // 실제 속도 차이가 반영되도록 구간별 MET 테이블로 교체(느린 걷기~빠른 러닝 전 구간 커버).
   double _metForPace(double paceMinPerKm) {
-    if (paceMinPerKm <= 8) return 7.0;
-    if (paceMinPerKm >= 12) return 6.0;
-    final t = (paceMinPerKm - 8) / (12 - 8);
-    return 7.0 - t;
+    if (paceMinPerKm <= 6) return 10.0;
+    if (paceMinPerKm <= 8) return 8.3;
+    if (paceMinPerKm <= 10) return 6.0;
+    if (paceMinPerKm <= 13) return 4.5;
+    return 3.5;
   }
 
   // MET × 체중(kg) × 시간(h) 공식 기반 칼로리 소모량
@@ -468,15 +537,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _startGpsTracking() async {
     try {
-      var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
+      // 러닝 시작 시점에는 always(백그라운드)까지 시도 — 화면이 꺼져도 스트림이 살아있어야 함
+      final perm = await _ensureLocationPermission(wantAlways: true);
       if (perm != LocationPermission.always && perm != LocationPermission.whileInUse) return;
 
       _positionSub?.cancel();
       _positionSub = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
+        // 안드로이드에서는 포그라운드 서비스 알림이 붙은 설정이 반환됨(웹은 기본 설정)
+        locationSettings: buildTrackingLocationSettings(
           accuracy: LocationAccuracy.high,
           distanceFilter: 1,
         ),
@@ -561,71 +629,54 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  // 시작 지점에서 충분히 멀어졌다가(_lapMinAwayMeters) 다시 근처로(_lapReturnRadiusMeters)
-  // 돌아오면 1바퀴로 카운트. 시작 지점은 이번 운동에서 첫 GPS 픽스로 고정(일시정지/재개에도 유지).
-  // 거리 조건에 더해, 아웃존에 있는 동안 진행 방향이 실제로 바뀌었는지(턴어라운드)도 확인해서
-  // 짧아진 반경(80m)에서 GPS 잡음만으로 복귀반경을 스치는 오탐을 줄임
+  // 시작 지점에서 _lapMinAwayMeters(40m) 이상 멀어졌다가 _lapReturnRadiusMeters(18m)
+  // 이내로 돌아오면 1바퀴. 시작 지점은 이번 운동의 첫 GPS 픽스로 고정(일시정지/재개에도 유지).
+  //
+  // v17의 "방향전환(베어링) 확인" 게이트는 제거함 — 40m/18m + 60초 히스테리시스만으로도
+  // 중복 카운트가 막히는데, 저속 조깅에서는 베어링 자체가 잡음으로 튀어 오히려 실제 랩을
+  // 억제할 위험이 더 컸음. 랩이 계속 0으로 나오던 상황이라 "놓치지 않는 것"을 우선함.
   void _checkLapCompletion(LatLng point) {
     _lapStartPoint ??= point;
     final distFromStart = Geolocator.distanceBetween(
       _lapStartPoint!.latitude, _lapStartPoint!.longitude,
       point.latitude, point.longitude,
     );
-
-    if (_lapLastBearingPoint != null) {
-      final moved = Geolocator.distanceBetween(
-        _lapLastBearingPoint!.latitude, _lapLastBearingPoint!.longitude,
-        point.latitude, point.longitude,
-      );
-      if (moved >= _lapBearingMinMoveMeters) {
-        final bearing = Geolocator.bearingBetween(
-          _lapLastBearingPoint!.latitude, _lapLastBearingPoint!.longitude,
-          point.latitude, point.longitude,
-        );
-        if (_hasLeftLapZone) {
-          _lapOutboundBearingDeg ??= bearing;
-          final diff = _angleDiffDeg(bearing, _lapOutboundBearingDeg!);
-          if (!_lapTurnaroundConfirmed && diff > _lapTurnaroundAngleDeg) {
-            _lapTurnaroundConfirmed = true;
-            FileLogger.instance.log(
-              '[Lap] 방향전환 감지: outbound=${_lapOutboundBearingDeg!.toStringAsFixed(0)}° '
-              'current=${bearing.toStringAsFixed(0)}° diff=${diff.toStringAsFixed(0)}°',
-            );
-          }
-        }
-        _lapLastBearingPoint = point;
-      }
-    } else {
-      _lapLastBearingPoint = point;
-    }
+    if (distFromStart > _lapMaxAwayMeters) _lapMaxAwayMeters = distFromStart;
+    final sinceLastLap = _seconds - _lastLapSeconds;
 
     if (distFromStart > _lapMinAwayMeters) {
       if (!_hasLeftLapZone) {
-        FileLogger.instance.log('[Lap] 아웃존 진입 (시작점에서 ${distFromStart.toStringAsFixed(0)}m)');
+        FileLogger.instance.log(
+          '[LAP] 아웃존 진입 | 현재이격=${distFromStart.toStringAsFixed(1)}m '
+          '최대이격=${_lapMaxAwayMeters.toStringAsFixed(1)}m 경과=${sinceLastLap}s 판정=대기',
+        );
       }
       _hasLeftLapZone = true;
-    } else if (_hasLeftLapZone && distFromStart <= _lapReturnRadiusMeters) {
-      // 방향전환이 확인됐거나, 복귀반경의 절반 이내로 아주 가깝게 돌아온 경우(방향 신호가
-      // 저속/잡음으로 못 잡혔더라도 실제 복귀는 확실한 상황)에만 카운트
-      final veryClose = distFromStart <= _lapReturnRadiusMeters / 2;
-      final turnaroundConfirmed = _lapTurnaroundConfirmed;
-      if (turnaroundConfirmed || veryClose) {
-        _hasLeftLapZone = false;
-        _lapOutboundBearingDeg = null;
-        _lapTurnaroundConfirmed = false;
+      return;
+    }
+
+    if (_hasLeftLapZone && distFromStart <= _lapReturnRadiusMeters) {
+      if (sinceLastLap < _lapMinIntervalSeconds) {
         FileLogger.instance.log(
-          '[Lap] 바퀴 완료! dist=${distFromStart.toStringAsFixed(1)}m '
-          'turnaroundConfirmed=$turnaroundConfirmed veryClose=$veryClose lapCount=${_lapCount + 1}',
+          '[LAP] 복귀 감지했으나 보류(최소 랩 간격 미달) | 현재이격=${distFromStart.toStringAsFixed(1)}m '
+          '최대이격=${_lapMaxAwayMeters.toStringAsFixed(1)}m 경과=${sinceLastLap}s '
+          '판정=보류(${_lapMinIntervalSeconds}s 필요)',
         );
-        setState(() {
-          _lapCount++;
-          _lapCompletionPoints.add(point);
-        });
-      } else {
-        FileLogger.instance.log(
-          '[Lap] 복귀반경 진입했지만 방향전환 미확인 — 카운트 보류 (dist=${distFromStart.toStringAsFixed(1)}m)',
-        );
+        return;
       }
+      _hasLeftLapZone = false;
+      _lastLapSeconds = _seconds;
+      FileLogger.instance.log(
+        '[LAP] 바퀴 완료 | 현재이격=${distFromStart.toStringAsFixed(1)}m '
+        '최대이격=${_lapMaxAwayMeters.toStringAsFixed(1)}m 경과=${sinceLastLap}s '
+        '판정=카운트(총 ${_lapCount + 1}바퀴)',
+      );
+      setState(() {
+        _lapCount++;
+        _lapCompletionPoints.add(point);
+        _lapSplitSeconds.add(_seconds);
+      });
+      _lapMaxAwayMeters = 0.0;
     }
   }
 
@@ -646,19 +697,19 @@ class _HomeScreenState extends State<HomeScreen> {
     _accelSub = null;
     _cadenceDiagnosticTimer?.cancel();
     _metronome.stop();
+    _applyWakelock(false);
     setState(() => _workoutState = WorkoutState.paused);
   }
 
   void _resumeWorkout() {
     setState(() => _workoutState = WorkoutState.running);
+    _applyWakelock(true);
     _metronome.start(_s.bpm, playImmediately: false);
     _lastGpsPoint = null;
     _lastGpsTime = null;
     _emaPoint = null;
     _gpsRejectStreak = 0;
     _gpsRejectStreakStart = null;
-    // 일시정지 동안의 이동은 베어링에 반영하면 안 되므로 리셋(바퀴 진행 상태 자체는 유지)
-    _lapLastBearingPoint = null;
     _startGpsTracking();
     _startStepDetection();
     _launchTimer();
@@ -673,6 +724,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _accelSub = null;
     _cadenceDiagnosticTimer?.cancel();
     _metronome.stop();
+    _applyWakelock(false);
     setState(() => _workoutState = WorkoutState.idle);
     _announceWorkoutSummary();
     _saveToDb();
@@ -693,7 +745,7 @@ class _HomeScreenState extends State<HomeScreen> {
       distanceKm: _distanceKm,
       durationSeconds: _seconds,
       avgPaceSecPerKm: _seconds / _distanceKm,
-      avgCadence: _cadenceSpm(_totalSteps, _seconds),
+      avgCadence: _avgCadenceSpm,
       lapCount: _lapCount,
       caloriesBurned: _calculateCalories(),
       weatherTempC: _workoutStartWeather?.tempC,
@@ -701,6 +753,7 @@ class _HomeScreenState extends State<HomeScreen> {
       weatherPrecipitationPercent: _workoutStartWeather?.precipitationPercent,
       routePoints: List<LatLng>.from(_routePoints),
       lapCompletionPoints: List<LatLng>.from(_lapCompletionPoints),
+      lapSplitSeconds: List<int>.from(_lapSplitSeconds),
     );
     await DatabaseService.instance.insertWorkout(record);
   }
@@ -708,7 +761,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void _launchTimer() {
     _workoutTimer?.cancel();
     _workoutTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      setState(() => _seconds++);
+      setState(() {
+        _seconds++;
+        // 이 1초 구간에 실제로 걸음이 감지되고 있었는지 기록 — 평균 케이던스의 분모로 씀
+        if (_liveCadenceSpm > 0) _cadenceActiveSeconds++;
+      });
     });
   }
 
@@ -740,12 +797,13 @@ class _HomeScreenState extends State<HomeScreen> {
       _lapStartPoint = null;
       _lapCount = 0;
       _hasLeftLapZone = false;
-      _lapLastBearingPoint = null;
-      _lapOutboundBearingDeg = null;
-      _lapTurnaroundConfirmed = false;
       _lapCompletionPoints.clear();
+      _lapSplitSeconds.clear();
+      _lapMaxAwayMeters = 0.0;
+      _lastLapSeconds = 0;
       _gpsRejectedTotal = 0;
       _gpsAcceptedTotal = 0;
+      _cadenceActiveSeconds = 0;
     });
   }
 
@@ -780,7 +838,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 누적 거리/시간/평균 페이스/평균 케이던스를 종합한 안내 문구
   String _buildFullSummary({String prefix = ''}) {
-    final cadence = _cadenceSpm(_totalSteps, _seconds);
+    final cadence = _avgCadenceSpm;
     final paceStr = _distanceKm >= 0.01
         ? ', 평균 페이스 ${_fmtMinSec(_seconds / _distanceKm)}'
         : '';
@@ -977,6 +1035,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
+
+            // 백그라운드 위치 권한 경고 — 이게 "항상 허용"이 아니면 화면이 꺼지는 순간
+            // 위치 스트림이 끊겨 거리가 통째로 유실됨(v17까지의 -7.9~-54.7% 오차 원인)
+            if (!_hasAlwaysLocation) _buildPermissionBanner(),
 
             // 지역 + 날씨 요약 (실제 위치 기준 — 지명을 함께 표시해 신뢰도 확인 가능)
             Padding(
@@ -1325,6 +1387,69 @@ class _HomeScreenState extends State<HomeScreen> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 56),
                   child: isPaused ? _buildPausedControls() : _buildRunningControl(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // "항상 허용"이 아닐 때 시작 화면 상단에 띄우는 경고 + 설정 앱 딥링크
+  Widget _buildPermissionBanner() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '위치 권한을 "항상 허용"으로 바꿔주세요',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: _s.preset.onBackground,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '지금은 화면이 꺼지면 거리 기록이 끊깁니다.\n설정 → 권한 → 위치 → "항상 허용"',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: _s.preset.onBackground.withValues(alpha: 0.7),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: () => Geolocator.openAppSettings(),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      '설정 열기',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),

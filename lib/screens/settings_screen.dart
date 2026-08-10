@@ -120,6 +120,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
               onTap: _showWeightPicker,
             ),
+            const SizedBox(height: 8),
+
+            _settingCard(
+              icon: Icons.replay_circle_filled_outlined,
+              label: "코스 1바퀴 거리",
+              trailing: Text("${_s.lapDistanceMeters.toStringAsFixed(0)} m",
+                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+              onTap: _showLapDistancePicker,
+            ),
+            const SizedBox(height: 8),
+
+            _settingCard(
+              icon: Icons.screen_lock_portrait_outlined,
+              label: "러닝 중 화면 켜두기",
+              trailing: Switch(
+                value: _s.keepScreenOn,
+                activeThumbColor: _accent,
+                onChanged: (v) => _update(() => _s.keepScreenOn = v),
+              ),
+            ),
 
             const SizedBox(height: 28),
 
@@ -581,6 +601,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
           TextButton(
             onPressed: () {
               _update(() => _s.weightKg = minKg + selectedIndex * step);
+              Navigator.pop(context);
+            },
+            child: Text("확인", style: TextStyle(color: _accent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 코스 1바퀴 거리 — "랩 × 이 값"이 GPS 거리 검증용 기준선이 되므로 실측값을 넣을 것
+  void _showLapDistancePicker() {
+    const minM = 50.0, maxM = 1000.0, step = 10.0;
+    final count = ((maxM - minM) / step).round() + 1;
+    var selectedIndex =
+        ((_s.lapDistanceMeters - minM) / step).round().clamp(0, count - 1);
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: _surface,
+        title: const Text("코스 1바퀴 거리 (m)"),
+        content: SizedBox(
+          height: 180,
+          child: _wheelColumn(
+            itemCount: count,
+            initialIndex: selectedIndex,
+            onChanged: (i) => selectedIndex = i,
+            label: (i) => '${(minM + i * step).toStringAsFixed(0)} m',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _update(() => _s.lapDistanceMeters = minM + selectedIndex * step);
               Navigator.pop(context);
             },
             child: Text("확인", style: TextStyle(color: _accent)),

@@ -16,6 +16,8 @@ class WorkoutRecord {
   final List<LatLng>? routePoints;
   // 바퀴가 완료(카운트)된 시점의 좌표들 — 이력 상세 지도에 완주 지점 마커로 표시
   final List<LatLng>? lapCompletionPoints;
+  // 각 바퀴가 완료된 시점의 누적 경과초 — 이력 상세에서 랩별 구간 기록으로 표시
+  final List<int>? lapSplitSeconds;
 
   const WorkoutRecord({
     this.id,
@@ -31,6 +33,7 @@ class WorkoutRecord {
     this.weatherPrecipitationPercent,
     this.routePoints,
     this.lapCompletionPoints,
+    this.lapSplitSeconds,
   });
 
   Map<String, dynamic> toMap() => {
@@ -51,6 +54,9 @@ class WorkoutRecord {
     'lap_points_json': (lapCompletionPoints != null && lapCompletionPoints!.isNotEmpty)
         ? jsonEncode(lapCompletionPoints!.map((p) => [p.latitude, p.longitude]).toList())
         : null,
+    'lap_splits_json': (lapSplitSeconds != null && lapSplitSeconds!.isNotEmpty)
+        ? jsonEncode(lapSplitSeconds)
+        : null,
   };
 
   factory WorkoutRecord.fromMap(Map<String, dynamic> map) => WorkoutRecord(
@@ -68,7 +74,18 @@ class WorkoutRecord {
         (map['weather_precipitation_percent'] as num?)?.toInt(),
     routePoints: _parseRouteJson(map['route_json'] as String?),
     lapCompletionPoints: _parseRouteJson(map['lap_points_json'] as String?),
+    lapSplitSeconds: _parseIntListJson(map['lap_splits_json'] as String?),
   );
+
+  static List<int>? _parseIntListJson(String? json) {
+    if (json == null || json.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(json) as List;
+      return decoded.map((e) => (e as num).toInt()).toList();
+    } catch (_) {
+      return null;
+    }
+  }
 
   static List<LatLng>? _parseRouteJson(String? json) {
     if (json == null || json.isEmpty) return null;
@@ -86,6 +103,23 @@ class WorkoutRecord {
   }
 
   bool get hasRoute => routePoints != null && routePoints!.isNotEmpty;
+
+  // 랩 × 코스 1바퀴 거리로 추정한 거리 — GPS 거리의 정확도를 앱 자체로 교차검증하는 기준선
+  double estimatedLapDistanceKm(double lapDistanceMeters) =>
+      lapCount * lapDistanceMeters / 1000.0;
+
+  // 랩별 구간 시간(초) — 저장된 "누적 경과초"의 차분으로 계산
+  List<int> get lapIntervalSeconds {
+    final splits = lapSplitSeconds;
+    if (splits == null || splits.isEmpty) return const [];
+    final out = <int>[];
+    var prev = 0;
+    for (final s in splits) {
+      out.add(s - prev);
+      prev = s;
+    }
+    return out;
+  }
 
   bool get hasWeather =>
       weatherTempC != null && weatherHumidity != null && weatherPrecipitationPercent != null;

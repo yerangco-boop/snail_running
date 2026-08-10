@@ -19,6 +19,11 @@ class AppSettings {
   String? ttsVoiceName;
   bool mixWithOtherAudio;
   double weightKg;
+  // 러닝 중 화면이 꺼지면 OS가 위치/센서 콜백을 억제해 거리가 유실되므로 기본 ON
+  bool keepScreenOn;
+  // 랩 1회당 코스 거리(m) — GPS 거리와 별개로 "랩 × 이 값"을 검증용 기준선으로 병기.
+  // 기본 240m는 실측한 트랙 둘레
+  double lapDistanceMeters;
   ThemePreset preset;
 
   AppSettings({
@@ -30,7 +35,9 @@ class AppSettings {
     this.goalType = GoalType.distance,
     this.ttsVoiceName,
     this.mixWithOtherAudio = true,
-    this.weightKg = 60.0,
+    this.weightKg = 70.0,
+    this.keepScreenOn = true,
+    this.lapDistanceMeters = 240.0,
     ThemePreset? preset,
   }) : preset = preset ?? kThemePresets.first;
 
@@ -47,6 +54,8 @@ class AppSettings {
   static const _kMixWithOtherAudio = 'mixWithOtherAudio';
   static const _kWeightKg = 'weightKg';
   static const _kPresetName = 'presetName';
+  static const _kKeepScreenOn = 'keepScreenOn';
+  static const _kLapDistanceMeters = 'lapDistanceMeters';
 
   // 저장된 값이 있으면 그 값으로 필드를 덮어씀 (없으면 생성자 기본값 그대로 유지)
   Future<void> load() async {
@@ -63,6 +72,8 @@ class AppSettings {
     ttsVoiceName = prefs.getString(_kTtsVoiceName) ?? ttsVoiceName;
     mixWithOtherAudio = prefs.getBool(_kMixWithOtherAudio) ?? mixWithOtherAudio;
     weightKg = prefs.getDouble(_kWeightKg) ?? weightKg;
+    keepScreenOn = prefs.getBool(_kKeepScreenOn) ?? keepScreenOn;
+    lapDistanceMeters = prefs.getDouble(_kLapDistanceMeters) ?? lapDistanceMeters;
     final presetName = prefs.getString(_kPresetName);
     if (presetName != null) {
       preset = kThemePresets.firstWhere(
@@ -87,6 +98,8 @@ class AppSettings {
     }
     await prefs.setBool(_kMixWithOtherAudio, mixWithOtherAudio);
     await prefs.setDouble(_kWeightKg, weightKg);
+    await prefs.setBool(_kKeepScreenOn, keepScreenOn);
+    await prefs.setDouble(_kLapDistanceMeters, lapDistanceMeters);
     await prefs.setString(_kPresetName, preset.name);
   }
 }

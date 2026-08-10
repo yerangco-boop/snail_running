@@ -1,6 +1,17 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- 화면이 꺼진 뒤에도 GPS 스트림이 유지되도록 (v17까지 "앱 사용 중에만 허용"
+         상태여서 화면 꺼짐 시 위치/가속도 콜백이 끊기고 거리가 -7.9~-54.7% 유실됨) -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+    <!-- 러닝 중 위치 추적을 포그라운드 서비스로 승격시켜 OS가 프로세스를 죽이거나
+         센서 콜백을 스로틀링하지 못하게 함 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <!-- Android 13+ 는 포그라운드 서비스 알림 표시에도 별도 권한 필요 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="snail_running"
@@ -28,6 +39,17 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- geolocator_android 플러그인이 자체 매니페스트에도 같은 서비스를 선언하므로,
+             foregroundServiceType 값이 다를 경우 매니페스트 병합 충돌이 나지 않도록
+             tools:replace로 이쪽 값을 우선 적용 (Android 14+는 이 타입 선언이 필수) -->
+        <service
+            android:name="com.baseflow.geolocator.GeolocatorLocationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location"
+            tools:replace="android:foregroundServiceType" />
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

@@ -2,7 +2,7 @@ name: snail_running
 description: "A custom slow jogging app for Hong Jeong-pyo"
 publish_to: 'none'
 
-version: 1.0.0+17
+version: 1.0.1+18
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -17,6 +17,11 @@ dependencies:
   flutter_tts: ^3.8.3
   audioplayers: ^5.2.1
   geolocator: ^10.1.0
+  # AndroidSettings/ForegroundNotificationConfig(포그라운드 서비스 알림)를 쓰려면
+  # 안드로이드 구현 패키지를 직접 import해야 해서 명시적 의존성으로 승격.
+  # 웹 빌드에서는 location_settings_web.dart로 조건부 분기되어 참조되지 않음
+  geolocator_android: ^4.5.0
+  wakelock_plus: ^1.1.4
   flutter_map: ^6.1.0
   latlong2: ^0.9.0
   sensors_plus: ^4.0.2
