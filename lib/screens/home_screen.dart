@@ -134,17 +134,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _lapStepsAtLastKm = 0;
   DateTime? _lastStepAt;
   bool _belowStepThreshold = true; // 상승 엣지 감지용: 직전 샘플이 임계값 이하였는지
-  // 2026-08-10 하향: 폰을 손에 들고 뛰면 손이 완충 역할을 해서 기기에 실제로 실리는
-  // 진폭이 작고, 아래 저역통과 필터가 피크를 추가로 깎음. 1.2 m/s²에서는 실외 러닝 내내
-  // 임계값 통과가 거의 안 잡혀 케이던스가 2~7spm(나이키 132~148spm)으로 측정됐음
-  static const double _stepMagnitudeThreshold = 0.35; // m/s²
+  // ── 걸음 감지: 절대 임계값이 아니라 "기준선 대비 진폭"으로 판정 ─────────────
+  // 2026-08-11 구조 변경. sqrt(x²+y²+z²)로 만든 크기는 항상 0 이상인 "정류된" 신호라
+  // 뛰는 동안 평균 1~3 m/s² 부근에서 진동할 뿐 0 근처로 내려오지 않음. 그래서 절대
+  // 임계값(v16의 1.2, v18의 0.35)을 쓰면 한 번 참이 된 뒤 계속 참으로 유지되고,
+  // 상승 엣지 방식이라 그 뒤로는 걸음이 영영 안 잡혔음(실측 5spm vs 나이키 134spm).
+  // 임계값을 낮출수록 오히려 악화되는 구조라 값 조정으로는 해결 불가였음.
+  //
+  // 이제 빠른 필터(3Hz)에서 느린 필터(0.5Hz, 기준선)를 빼 0을 중심으로 진동하는
+  // 밴드패스 신호를 만들고 거기에 임계값을 적용 — 폰을 어떻게 들든 기준선이 따라가므로
+  // 걸음마다 상승 엣지가 정상적으로 발생함. 러닝 134spm=2.23Hz는 통과대역 안이고,
+  // 자세 변화 같은 0.5Hz 미만 성분은 기준선에 흡수되어 제거됨.
+  static const double _stepFastAlpha = 0.2738; // 3Hz   @50Hz
+  static const double _stepSlowAlpha = 0.0591; // 0.5Hz @50Hz
+  double _fastMag = 0.0;
+  double _slowMag = 0.0;
+  // 기준선 대비 진폭 임계값 (0을 중심으로 진동하는 신호에 적용하므로 절대 임계값보다
+  // 훨씬 덜 민감함 — 실측 로그의 ac 진폭 범위를 보고 필요하면 조정)
+  static const double _stepMagnitudeThreshold = 0.20; // m/s²
   static const int _minStepIntervalMs = 250; // 분당 최대 240보 한도로 노이즈 중복 감지 방지
-
-  // 3Hz 1차 저역통과(IIR) — 팔 흔들림/노면 충격의 고주파 성분을 걷어내고 걸음 주기만 남김.
-  // alpha = dt/(RC+dt), RC = 1/(2πfc). 50Hz 샘플링(dt=0.02s), fc=3Hz → 0.2738.
-  // 러닝 케이던스 160spm은 2.67Hz라 컷오프 아래이므로 걸음 신호 자체는 보존됨
-  static const double _stepFilterAlpha = 0.2738;
-  double _filteredMag = 0.0;
 
   // 평균 케이던스 계산용 — 스트림이 끊기거나 정지해 있던 0spm 구간을 분모에서 빼야
   // 실제로 뛴 구간의 평균이 나옴(예전엔 이 구간들이 평균을 27spm까지 끌어내렸음)
@@ -154,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // "스트림 자체가 죽었다"와 "임계값이 너무 높아 걸음을 못 잡는다"를 로그로 구별할 수 있음
   int _accelEventCount = 0;
   double _windowMagMin = double.infinity;
-  double _windowMagMax = 0;
+  double _windowMagMax = double.negativeInfinity;
   Timer? _cadenceDiagnosticTimer;
 
   // 최근 걸음 시각(실시간 케이던스 롤링 윈도우 계산용)
@@ -435,29 +443,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _belowStepThreshold = true;
     _accelEventCount = 0;
     _windowMagMin = double.infinity;
-    _windowMagMax = 0;
-    _filteredMag = 0.0;
+    _windowMagMax = double.negativeInfinity;
+    _fastMag = 0.0;
+    _slowMag = 0.0;
 
-    // 10초마다 "수신 이벤트 수 vs 임계값 통과 수 vs 그 구간 mag 범위"를 요약 — 스트림이
-    // 죽었다면 이벤트=0으로 바로 드러나고, 스트림은 살아있는데 걸음만 못 잡는 거라면
-    // mag 최댓값이 임계값 근처에서 못 넘는 패턴으로 드러남
+    // 10초마다 진단 요약. 기록하는 ac 범위는 "기준선을 뺀" 진폭이라 0을 중심으로
+    // 대칭이어야 정상 — 만약 min이 계속 양수면 기준선 추적이 안 되는 것이고,
+    // 수신이벤트=0이면 스트림이 죽은 것, 진폭은 충분한데 통과=0이면 임계값 문제
     var lastLoggedEventCount = 0;
     var lastLoggedSteps = _totalSteps;
     _cadenceDiagnosticTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       final eventsInWindow = _accelEventCount - lastLoggedEventCount;
       final stepsInWindow = _totalSteps - lastLoggedSteps;
-      final magRange = _windowMagMin.isFinite
+      final acRange = _windowMagMin.isFinite
           ? '${_windowMagMin.toStringAsFixed(3)}~${_windowMagMax.toStringAsFixed(3)}'
           : '(이벤트 없음)';
       FileLogger.instance.log(
         '[CADENCE] 10초 요약 | 수신이벤트=$eventsInWindow개 임계값통과=$stepsInWindow개 '
-        '구간filtered_mag범위=${magRange}m/s² (임계값=$_stepMagnitudeThreshold) '
+        'ac진폭범위=${acRange}m/s² (임계값=$_stepMagnitudeThreshold) '
+        '기준선=${_slowMag.toStringAsFixed(3)}m/s² '
         '실시간=${_liveCadenceSpm}spm 누적걸음=$_totalSteps 활성구간=${_cadenceActiveSeconds}s',
       );
       lastLoggedEventCount = _accelEventCount;
       lastLoggedSteps = _totalSteps;
       _windowMagMin = double.infinity;
-      _windowMagMax = 0;
+      _windowMagMax = double.negativeInfinity;
     });
 
     _accelSub = userAccelerometerEventStream(
@@ -466,13 +476,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       (e) {
         _accelEventCount++;
         final rawMag = math.sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
-        // 3Hz 저역통과로 고주파 잡음 제거 후 그 결과에 임계값을 적용
-        _filteredMag += _stepFilterAlpha * (rawMag - _filteredMag);
-        final mag = _filteredMag;
-        if (mag < _windowMagMin) _windowMagMin = mag;
-        if (mag > _windowMagMax) _windowMagMax = mag;
+        // 빠른 필터(잡음 제거) - 느린 필터(기준선) = 0을 중심으로 진동하는 밴드패스 신호.
+        // 이렇게 해야 "정류된 크기 신호가 임계값 위에 눌러앉아 상승 엣지가 사라지는" 문제
+        // 없이 걸음마다 엣지가 발생함
+        _fastMag += _stepFastAlpha * (rawMag - _fastMag);
+        _slowMag += _stepSlowAlpha * (rawMag - _slowMag);
+        final ac = _fastMag - _slowMag;
+        if (ac < _windowMagMin) _windowMagMin = ac;
+        if (ac > _windowMagMax) _windowMagMax = ac;
         final now = DateTime.now();
-        final isAbove = mag > _stepMagnitudeThreshold;
+        final isAbove = ac > _stepMagnitudeThreshold;
         // 임계값을 "넘는 순간"(상승 엣지)에만 걸음으로 카운트 — 신호가 임계값 위에
         // 머무는 동안 여러 샘플이 들어와도 한 걸음으로만 잡히도록 함(디바운스만으로는
         // 임계값 근처에서 값이 미세하게 떨릴 때 중복 카운트될 여지가 있었음)

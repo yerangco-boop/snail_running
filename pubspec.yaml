@@ -2,7 +2,7 @@ name: snail_running
 description: "A custom slow jogging app for Hong Jeong-pyo"
 publish_to: 'none'
 
-version: 1.0.1+18
+version: 1.0.2+19
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
