@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -16,6 +17,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/weather_service.dart';
 import '../services/file_logger.dart';
 import '../services/location_settings_factory.dart';
+import '../services/workout_snapshot.dart';
 import '../utils/route_utils.dart';
 
 enum WorkoutState { idle, countdown, running, paused }
@@ -44,7 +46,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   // 운동 중 중앙 큰 숫자 표시 모드: 0=거리, 1=시간, 2=케이던스, 3=kcal (탭할 때마다 순환)
   int _mainDisplayMode = 0;
-  static const List<String> _mainDisplayLabels = ['km', '시간', '케이던스', 'kcal', '바퀴'];
+  static const List<String> _mainDisplayLabels = ['km', '시간', '케이던스', 'kcal', '바퀴', '걸음'];
 
   void _cycleMainDisplay() {
     setState(() => _mainDisplayMode = (_mainDisplayMode + 1) % _mainDisplayLabels.length);
@@ -57,6 +59,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Timer? _workoutTimer;
   Timer? _countdownTimer;
+  // 비정상 종료 대비 주기 저장
+  Timer? _snapshotTimer;
+  DateTime? _workoutStartedAt;
+  static const int _snapshotIntervalSeconds = 30;
   final FlutterTts _tts = FlutterTts();
   final MetronomeService _metronome = MetronomeService();
   final MapController _mapController = MapController();
@@ -184,6 +190,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   String? _appliedTtsVoiceName;
   bool? _appliedMixSetting;
+  double? _appliedMetronomeVolume;
 
   // ── 날씨 ─────────────────────────────────────────────────────────────────
   final WeatherService _weatherService = WeatherService();
@@ -246,7 +253,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _tts.setLanguage("ko-KR");
     _applyTtsVoice();
     _appliedMixSetting = _s.mixWithOtherAudio;
-    _metronome.init(mixWithOtherAudio: _s.mixWithOtherAudio);
+    _appliedMetronomeVolume = _s.metronomeVolume;
+    _metronome.init(
+      mixWithOtherAudio: _s.mixWithOtherAudio,
+      volume: _s.metronomeVolume,
+    );
+    // 비정상 종료로 남은 러닝 스냅샷이 있으면 복구 여부를 물어봄
+    WidgetsBinding.instance.addPostFrameCallback((_) => _offerCrashRecovery());
     // 위치를 먼저 구한 뒤 그 좌표로 날씨를 조회 (위치 조회 실패해도 fetchLocation이
     // 내부에서 예외를 삼키므로 이어서 항상 폴백 좌표로 날씨 조회가 진행됨)
     _fetchLocation().then((_) {
@@ -270,7 +283,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     if (_appliedMixSetting != _s.mixWithOtherAudio) {
       _appliedMixSetting = _s.mixWithOtherAudio;
-      _metronome.init(mixWithOtherAudio: _s.mixWithOtherAudio);
+      _metronome.init(
+        mixWithOtherAudio: _s.mixWithOtherAudio,
+        volume: _s.metronomeVolume,
+      );
+      _appliedMetronomeVolume = _s.metronomeVolume;
+    } else if (_appliedMetronomeVolume != _s.metronomeVolume) {
+      // 음량만 바뀐 경우엔 재초기화 없이 즉시 반영
+      _appliedMetronomeVolume = _s.metronomeVolume;
+      _metronome.setVolume(_s.metronomeVolume);
     }
   }
 
@@ -324,11 +345,142 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _positionSub?.cancel();
     _accelSub?.cancel();
     _cadenceDiagnosticTimer?.cancel();
+    _snapshotTimer?.cancel();
     _metronome.dispose();
     _mapController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable();
     super.dispose();
+  }
+
+  // ── 비정상 종료 대비 스냅샷 ────────────────────────────────────────────────
+  void _startSnapshotTimer() {
+    _snapshotTimer?.cancel();
+    _snapshotTimer = Timer.periodic(
+      const Duration(seconds: _snapshotIntervalSeconds),
+      (_) => _saveSnapshot(),
+    );
+  }
+
+  Future<void> _saveSnapshot() async {
+    if (_workoutStartedAt == null) return;
+    await WorkoutSnapshot(
+      savedAt: DateTime.now(),
+      startedAt: _workoutStartedAt!,
+      distanceKm: _distanceKm,
+      seconds: _seconds,
+      totalSteps: _totalSteps,
+      avgCadence: _avgCadenceSpm,
+      cadenceActiveSeconds: _cadenceActiveSeconds,
+      lapCount: _lapCount,
+      caloriesBurned: _calculateCalories(),
+      routePoints: List<LatLng>.from(_routePoints),
+      lapCompletionPoints: List<LatLng>.from(_lapCompletionPoints),
+      lapSplitSeconds: List<int>.from(_lapSplitSeconds),
+    ).save();
+  }
+
+  // 앱 시작 시 남아있는 스냅샷이 있으면 이력으로 저장할지 물어봄
+  Future<void> _offerCrashRecovery() async {
+    final snap = await WorkoutSnapshot.load();
+    if (snap == null || !mounted) return;
+
+    final km = snap.distanceKm.toStringAsFixed(2);
+    final min = snap.seconds ~/ 60;
+    final sec = snap.seconds % 60;
+    final restore = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: _s.preset.background,
+        title: Text('이전 러닝 기록을 복구할까요?',
+            style: TextStyle(color: _s.preset.onBackground, fontSize: 18)),
+        content: Text(
+          '앱이 예기치 않게 종료되어 저장되지 않은 기록이 있습니다.\n\n'
+          '$km km · $min분 ${sec}초 · ${snap.lapCount}바퀴\n\n'
+          '이력에 저장할까요?',
+          style: TextStyle(color: _s.preset.onBackground.withValues(alpha: 0.8), height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('삭제', style: TextStyle(color: _s.preset.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('복구', style: TextStyle(color: _s.accent, fontSize: 16)),
+          ),
+        ],
+      ),
+    );
+
+    if (restore == true) {
+      await DatabaseService.instance.insertWorkout(WorkoutRecord(
+        date: snap.startedAt,
+        distanceKm: snap.distanceKm,
+        durationSeconds: snap.seconds,
+        avgPaceSecPerKm:
+            snap.distanceKm > 0.01 ? snap.seconds / snap.distanceKm : 0,
+        avgCadence: snap.avgCadence,
+        totalSteps: snap.totalSteps,
+        lapCount: snap.lapCount,
+        caloriesBurned: snap.caloriesBurned,
+        routePoints: snap.routePoints,
+        lapCompletionPoints: snap.lapCompletionPoints,
+        lapSplitSeconds: snap.lapSplitSeconds,
+      ));
+      FileLogger.instance.log('[Recovery] 스냅샷에서 기록 복구: ${snap.distanceKm}km ${snap.seconds}s');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('이력에 저장했습니다.')),
+        );
+      }
+    }
+    await WorkoutSnapshot.clear();
+  }
+
+  // 러닝 중 뒤로가기를 눌렀을 때 확인 다이얼로그. 확인 시 앱 종료
+  Future<void> _confirmExitDuringWorkout() async {
+    final exit = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: _s.preset.background,
+        title: Text('러닝을 종료할까요?',
+            style: TextStyle(color: _s.preset.onBackground, fontSize: 18)),
+        content: Text(
+          '기록이 저장되지 않습니다.',
+          style: TextStyle(color: _s.preset.onBackground.withValues(alpha: 0.8)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('계속 달리기', style: TextStyle(color: _s.accent, fontSize: 16)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('종료', style: TextStyle(color: Colors.red.shade400)),
+          ),
+        ],
+      ),
+    );
+    if (exit == true) {
+      // 나가기 직전 스냅샷을 남겨, 다음 실행 때 복구를 제안할 수 있게 함
+      await _saveSnapshot();
+      await FileLogger.instance.flushNow();
+      await SystemNavigator.pop();
+    }
+  }
+
+  // 러닝 중에도 즉시 메트로놈을 껐다 켤 수 있게 함 (설정 화면까지 안 들어가도 되도록).
+  // 값은 AppSettings에 저장되므로 다음 러닝에도 그대로 유지됨
+  void _toggleMetronome() {
+    setState(() => _s.metronomeEnabled = !_s.metronomeEnabled);
+    if (_s.metronomeEnabled) {
+      if (_workoutState == WorkoutState.running) _metronome.start(_s.bpm);
+    } else {
+      _metronome.stop();
+    }
+    widget.onSettingsChanged();
   }
 
   // 러닝 중 화면 꺼짐 방지 — 설정에서 끌 수 있게 하되 기본은 ON
@@ -416,7 +568,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _applyWakelock(true);
     _workoutStartWeather = _weather;
     _announceWorkoutStart();
-    _metronome.start(_s.bpm);
+    if (_s.metronomeEnabled) _metronome.start(_s.bpm);
     _lastGpsPoint = null;
     _lastGpsTime = null;
     _emaPoint = null;
@@ -431,9 +583,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _lapSplitSeconds.clear();
     _lapMaxAwayMeters = 0.0;
     _lastLapSeconds = 0;
+    _workoutStartedAt = DateTime.now();
     await _startGpsTracking();
     _startStepDetection();
     _launchTimer();
+    _startSnapshotTimer();
   }
 
   void _startStepDetection() {
@@ -527,16 +681,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return '$m분 $sec초';
   }
 
-  // 페이스 구간별 MET. 기존에는 8~12분/km를 MET 6~7로만 선형 보간해서 폭이 너무 좁았고,
-  // 그 결과 12세션 중 8세션이 kcal/분 7.18~7.21로 사실상 고정 수렴 — 26'14"/km 세션과
-  // 11'20"/km 세션의 분당 칼로리가 같게 나오는 명백한 결함이 있었음.
-  // 실제 속도 차이가 반영되도록 구간별 MET 테이블로 교체(느린 걷기~빠른 러닝 전 구간 커버).
+  // 페이스 구간별 MET.
+  // v18에서 선형 보간(6~7 고정 수렴 버그)을 구간표로 바꿔 페이스 반영은 되게 했지만,
+  // 2026-08-12 실측에서 137kcal/25.3분 = 5.42 kcal/분(역산 MET 4.6)으로 "보통 걷기"
+  // 수준까지 떨어지는 게 확인됨. 슬로우 조깅은 같은 속도의 걷기보다 상하 운동이 커서
+  // 실제 MET가 더 높으므로 느린 구간(8분/km 이상)을 중심으로 상향 조정.
+  // 검산: 10'38"/km · 25분17초 · 70kg → MET 6.2 → 183kcal
   double _metForPace(double paceMinPerKm) {
     if (paceMinPerKm <= 6) return 10.0;
-    if (paceMinPerKm <= 8) return 8.3;
-    if (paceMinPerKm <= 10) return 6.0;
-    if (paceMinPerKm <= 13) return 4.5;
-    return 3.5;
+    if (paceMinPerKm <= 8) return 8.8;
+    if (paceMinPerKm <= 10) return 7.5;
+    if (paceMinPerKm <= 13) return 6.2;
+    return 5.0;
   }
 
   // MET × 체중(kg) × 시간(h) 공식 기반 칼로리 소모량
@@ -709,15 +865,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _accelSub?.cancel();
     _accelSub = null;
     _cadenceDiagnosticTimer?.cancel();
+    _snapshotTimer?.cancel();
     _metronome.stop();
     _applyWakelock(false);
+    // 일시정지 상태로 앱이 죽어도 복구되도록 이 시점 상태를 저장
+    _saveSnapshot();
     setState(() => _workoutState = WorkoutState.paused);
   }
 
   void _resumeWorkout() {
     setState(() => _workoutState = WorkoutState.running);
     _applyWakelock(true);
-    _metronome.start(_s.bpm, playImmediately: false);
+    if (_s.metronomeEnabled) _metronome.start(_s.bpm, playImmediately: false);
     _lastGpsPoint = null;
     _lastGpsTime = null;
     _emaPoint = null;
@@ -726,6 +885,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _startGpsTracking();
     _startStepDetection();
     _launchTimer();
+    _startSnapshotTimer();
   }
 
   void _stopWorkout() {
@@ -736,10 +896,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _accelSub?.cancel();
     _accelSub = null;
     _cadenceDiagnosticTimer?.cancel();
+    _snapshotTimer?.cancel();
     _metronome.stop();
     _applyWakelock(false);
     setState(() => _workoutState = WorkoutState.idle);
     _announceWorkoutSummary();
+    // 정상 종료로 DB에 저장되므로 복구용 스냅샷은 더 이상 필요 없음
+    _workoutStartedAt = null;
+    WorkoutSnapshot.clear();
     _saveToDb();
     _showSummaryDialog();
     // 운동 종료 직후 로그가 파일에 확실히 반영되도록 즉시 flush
@@ -759,6 +923,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       durationSeconds: _seconds,
       avgPaceSecPerKm: _seconds / _distanceKm,
       avgCadence: _avgCadenceSpm,
+      totalSteps: _totalSteps,
       lapCount: _lapCount,
       caloriesBurned: _calculateCalories(),
       weatherTempC: _workoutStartWeather?.tempC,
@@ -984,6 +1149,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return _calculateCalories().toStringAsFixed(0);
       case 4:
         return '$_lapCount';
+      case 5:
+        return _formatSteps(_totalSteps);
       default:
         return _distanceKm.toStringAsFixed(2);
     }
@@ -992,6 +1159,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String get _formattedTime {
     final m = _seconds ~/ 60, s = _seconds % 60;
     return "${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
+  }
+
+  // 2860 -> "2,860" (천 단위 구분) — 큰 숫자를 한눈에 읽히게
+  static String _formatSteps(int steps) {
+    final digits = steps.toString();
+    final buf = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) buf.write(',');
+      buf.write(digits[i]);
+    }
+    return buf.toString();
   }
 
   String get _avgPaceDisplay {
@@ -1005,15 +1183,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final Widget screen;
     switch (_workoutState) {
       case WorkoutState.idle:
-        return _buildPreRunScreen();
+        screen = _buildPreRunScreen();
+        break;
       case WorkoutState.countdown:
-        return _buildCountdownScreen();
+        screen = _buildCountdownScreen();
+        break;
       case WorkoutState.running:
       case WorkoutState.paused:
-        return _buildRunningScreen();
+        screen = _buildRunningScreen();
+        break;
     }
+
+    // 운동이 진행 중일 때만 뒤로가기를 가로챔 — 예전엔 뒤로가기 한 번에 앱이 즉시
+    // 종료되면서 그때까지의 세션이 통째로 사라졌음. 대기 상태에서는 기존 동작 유지.
+    // IndexedStack이라 이력/설정 탭을 보고 있어도 이 위젯이 트리에 남아 있어 함께 보호됨
+    final workoutActive = _workoutState != WorkoutState.idle;
+    return PopScope(
+      canPop: !workoutActive,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _confirmExitDuringWorkout();
+      },
+      child: screen,
+    );
   }
 
   // ┌────────────────────────────────────────────────────────┐
@@ -1317,6 +1512,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
                 Container(height: 1, color: _s.preset.divider),
 
+                // ── 메트로놈 즉시 ON/OFF ─────────────────────────
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: _buildMetronomeToggle(),
+                ),
+
                 // ── 중앙: 거리 (가장 크고 굵게) ──────────────────
                 Expanded(
                   child: Center(
@@ -1483,6 +1684,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Container(width: 1, height: 32, color: _s.preset.divider),
           Expanded(child: _metricItem('시간', _formattedTime)),
         ],
+      ),
+    );
+  }
+
+  // 러닝 중 화면에 얹는 메트로놈 ON/OFF 칩 — 탭 한 번으로 즉시 반영
+  Widget _buildMetronomeToggle() {
+    final on = _s.metronomeEnabled;
+    final onRun = _s.preset.onRun;
+    return GestureDetector(
+      onTap: _toggleMetronome,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: on
+              ? _s.preset.accent.withValues(alpha: 0.18)
+              : onRun.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: on
+                ? _s.preset.accent.withValues(alpha: 0.55)
+                : onRun.withValues(alpha: 0.25),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              on ? Icons.music_note_rounded : Icons.music_off_rounded,
+              size: 15,
+              color: on ? _s.preset.accent : onRun.withValues(alpha: 0.5),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              on ? '메트로놈 ${_s.bpm}' : '메트로놈 꺼짐',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: on ? _s.preset.accent : onRun.withValues(alpha: 0.5),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

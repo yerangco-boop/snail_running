@@ -8,6 +8,8 @@ class WorkoutRecord {
   final int durationSeconds;
   final double avgPaceSecPerKm;
   final int avgCadence;
+  // 가속도계 피크 검출로 실제로 센 누적 걸음 수 (평균 케이던스 × 시간으로 역산한 값이 아님)
+  final int totalSteps;
   final int lapCount;
   final double caloriesBurned;
   final double? weatherTempC;
@@ -26,6 +28,7 @@ class WorkoutRecord {
     required this.durationSeconds,
     required this.avgPaceSecPerKm,
     this.avgCadence = 0,
+    this.totalSteps = 0,
     this.lapCount = 0,
     this.caloriesBurned = 0.0,
     this.weatherTempC,
@@ -43,6 +46,7 @@ class WorkoutRecord {
     'duration_seconds': durationSeconds,
     'avg_pace_sec': avgPaceSecPerKm,
     'avg_cadence': avgCadence,
+    'total_steps': totalSteps,
     'lap_count': lapCount,
     'calories_burned': caloriesBurned,
     'weather_temp_c': weatherTempC,
@@ -66,6 +70,7 @@ class WorkoutRecord {
     durationSeconds: map['duration_seconds'] as int,
     avgPaceSecPerKm: (map['avg_pace_sec'] as num).toDouble(),
     avgCadence: (map['avg_cadence'] as num?)?.toInt() ?? 0,
+    totalSteps: (map['total_steps'] as num?)?.toInt() ?? 0,
     lapCount: (map['lap_count'] as num?)?.toInt() ?? 0,
     caloriesBurned: (map['calories_burned'] as num?)?.toDouble() ?? 0.0,
     weatherTempC: (map['weather_temp_c'] as num?)?.toDouble(),

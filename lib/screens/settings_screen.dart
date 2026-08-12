@@ -160,6 +160,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 8),
 
             _settingCard(
+              icon: Icons.music_note_outlined,
+              label: "메트로놈 사용",
+              trailing: Switch(
+                value: _s.metronomeEnabled,
+                activeThumbColor: _accent,
+                onChanged: (v) => _update(() => _s.metronomeEnabled = v),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            _buildMetronomeVolumeCard(),
+            const SizedBox(height: 8),
+
+            _settingCard(
               icon: Icons.headphones_outlined,
               label: "다른 오디오와 함께 재생",
               trailing: Switch(
@@ -197,6 +211,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildAboutCard(),
           ],
         ),
+      ),
+    );
+  }
+
+  // 메트로놈 음량 슬라이더 — 스피커로만 들을 때 음량이 부족한 경우를 위해 노출.
+  // 값은 SoundPool의 leftVolume/rightVolume(안드로이드), Web Audio gain(웹)으로 전달됨
+  Widget _buildMetronomeVolumeCard() {
+    final percent = (_s.metronomeVolume * 100).round();
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: _s.preset.cardGradient,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _s.preset.cardBorder),
+        boxShadow: _s.preset.cardShadow,
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.volume_up_outlined, color: _accent, size: 22),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text("메트로놈 음량",
+                    style: TextStyle(fontSize: 16, color: _s.preset.onBackground)),
+              ),
+              Text("$percent%",
+                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          Slider(
+            value: _s.metronomeVolume.clamp(0.0, 1.0),
+            activeColor: _accent,
+            onChanged: (v) => _update(() => _s.metronomeVolume = v),
+          ),
+        ],
       ),
     );
   }

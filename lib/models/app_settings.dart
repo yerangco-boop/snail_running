@@ -18,6 +18,10 @@ class AppSettings {
   // 성별이 표기되지 않아 작동하지 않아 폐기하고, 사용자가 직접 듣고 고르는 방식으로 대체
   String? ttsVoiceName;
   bool mixWithOtherAudio;
+  // 메트로놈 재생 여부 — 러닝 화면에서 즉시 껐다 켤 수 있고 그 값이 그대로 유지됨
+  bool metronomeEnabled;
+  // 메트로놈 음량 0.0~1.0 (설정 화면 슬라이더는 0~100%로 표시)
+  double metronomeVolume;
   double weightKg;
   // 러닝 중 화면이 꺼지면 OS가 위치/센서 콜백을 억제해 거리가 유실되므로 기본 ON
   bool keepScreenOn;
@@ -35,6 +39,8 @@ class AppSettings {
     this.goalType = GoalType.distance,
     this.ttsVoiceName,
     this.mixWithOtherAudio = true,
+    this.metronomeEnabled = true,
+    this.metronomeVolume = 1.0,
     this.weightKg = 70.0,
     this.keepScreenOn = true,
     this.lapDistanceMeters = 240.0,
@@ -52,6 +58,8 @@ class AppSettings {
   static const _kGoalType = 'goalType';
   static const _kTtsVoiceName = 'ttsVoiceName';
   static const _kMixWithOtherAudio = 'mixWithOtherAudio';
+  static const _kMetronomeEnabled = 'metronomeEnabled';
+  static const _kMetronomeVolume = 'metronomeVolume';
   static const _kWeightKg = 'weightKg';
   static const _kPresetName = 'presetName';
   static const _kKeepScreenOn = 'keepScreenOn';
@@ -71,6 +79,8 @@ class AppSettings {
     }
     ttsVoiceName = prefs.getString(_kTtsVoiceName) ?? ttsVoiceName;
     mixWithOtherAudio = prefs.getBool(_kMixWithOtherAudio) ?? mixWithOtherAudio;
+    metronomeEnabled = prefs.getBool(_kMetronomeEnabled) ?? metronomeEnabled;
+    metronomeVolume = prefs.getDouble(_kMetronomeVolume) ?? metronomeVolume;
     weightKg = prefs.getDouble(_kWeightKg) ?? weightKg;
     keepScreenOn = prefs.getBool(_kKeepScreenOn) ?? keepScreenOn;
     lapDistanceMeters = prefs.getDouble(_kLapDistanceMeters) ?? lapDistanceMeters;
@@ -97,6 +107,8 @@ class AppSettings {
       await prefs.remove(_kTtsVoiceName);
     }
     await prefs.setBool(_kMixWithOtherAudio, mixWithOtherAudio);
+    await prefs.setBool(_kMetronomeEnabled, metronomeEnabled);
+    await prefs.setDouble(_kMetronomeVolume, metronomeVolume);
     await prefs.setDouble(_kWeightKg, weightKg);
     await prefs.setBool(_kKeepScreenOn, keepScreenOn);
     await prefs.setDouble(_kLapDistanceMeters, lapDistanceMeters);

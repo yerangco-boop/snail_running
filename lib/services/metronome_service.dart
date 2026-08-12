@@ -8,8 +8,10 @@ class MetronomeService {
   int _gen = 0;
   bool get isRunning => _timer != null;
 
-  Future<void> init({bool mixWithOtherAudio = true}) async =>
-      _click.init(mixWithOtherAudio: mixWithOtherAudio);
+  Future<void> init({bool mixWithOtherAudio = true, double volume = 1.0}) async =>
+      _click.init(mixWithOtherAudio: mixWithOtherAudio, volume: volume);
+
+  Future<void> setVolume(double volume) => _click.setVolume(volume);
 
   // playImmediately=true : 즉시 첫 박 재생 후 타이머 시작 (최초 시작 / AudioContext unlock)
   // playImmediately=false: 타이머만 시작 (재개 — 박자 위상 깨짐 방지)

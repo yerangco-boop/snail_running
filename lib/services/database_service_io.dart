@@ -18,7 +18,7 @@ class DatabaseService {
     final path = join(await getDatabasesPath(), 'snail_running.db');
     return openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: (db, _) => db.execute('''
         CREATE TABLE workouts(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,6 +27,7 @@ class DatabaseService {
           duration_seconds INTEGER NOT NULL,
           avg_pace_sec REAL NOT NULL,
           avg_cadence INTEGER NOT NULL DEFAULT 0,
+          total_steps INTEGER NOT NULL DEFAULT 0,
           calories_burned REAL NOT NULL DEFAULT 0,
           weather_temp_c REAL,
           weather_humidity INTEGER,
@@ -62,6 +63,11 @@ class DatabaseService {
         }
         if (oldVersion < 7) {
           await db.execute('ALTER TABLE workouts ADD COLUMN lap_splits_json TEXT');
+        }
+        // ALTER TABLE ADD COLUMN은 기존 행을 보존하고 기본값 0으로 채움 — 이력 유실 없음
+        if (oldVersion < 8) {
+          await db.execute(
+              'ALTER TABLE workouts ADD COLUMN total_steps INTEGER NOT NULL DEFAULT 0');
         }
       },
     );
