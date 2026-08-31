@@ -26,6 +26,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Color get _accent => _s.accent;
   Color get _surface => _s.preset.surface;
 
+  // 슬로우 조깅 권장 케이던스 대역을 담을 수 있도록 5단위로 선택
+  static const int _minBpm = 140;
+  static const int _maxBpm = 200;
+  static const int _bpmStep = 5;
+
   // 실기기에 실제로 설치된 앱 이름/versionName/versionCode 확인용 (하드코딩이 아니라
   // 빌드 시점 pubspec.yaml의 version: X.Y.Z+N에서 그대로 채워짐 — 매 빌드마다 자동 갱신)
   PackageInfo? _packageInfo;
@@ -33,7 +38,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ? null
       : 'v${_packageInfo!.version} (${_packageInfo!.buildNumber})';
 
-  // 지난 기록에서 계산한 실측 보폭(m). 목표 페이스에 맞는 BPM을 역산하는 데 씀
+  // 지난 기록에서 계산한 실측 보폭(m) — "지금 내 보폭"을 권장값과 비교해 보여주는 용도.
+  // BPM 제안 자체는 아래 슬로우 조깅 표준 보폭을 기준으로 함(실측 보폭을 쓰면 느리게
+  // 뛸수록 BPM을 낮추라고 제안하게 되어 슬로우 조깅 원칙과 반대가 됨)
   double? _measuredStride;
 
   @override
@@ -67,14 +74,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  // 속도(m/분) = 케이던스(spm) × 보폭(m) 관계에서 역산한 권장 BPM
+  // ── 슬로우 조깅 표준 보폭 (페이스별) ──────────────────────────────────────
+  // 슬로우 조깅은 "보폭을 짧게, 케이던스는 높게" 유지하는 방식이라, 느려질수록
+  // 보폭이 짧아지고 케이던스는 높은 대역(대략 155~190spm)에 머문다.
+  // 아래 앵커를 선형 보간해서 목표 페이스에 해당하는 표준 보폭을 구함.
+  static const List<List<double>> _slowJogStrideAnchors = [
+    [7.0, 0.75], [8.0, 0.68], [9.0, 0.62], [10.0, 0.57],
+    [11.0, 0.52], [13.0, 0.47], [15.0, 0.43],
+  ];
+
+  double _slowJogStrideFor(double paceMinPerKm) {
+    final a = _slowJogStrideAnchors;
+    if (paceMinPerKm <= a.first[0]) return a.first[1];
+    if (paceMinPerKm >= a.last[0]) return a.last[1];
+    for (var i = 0; i < a.length - 1; i++) {
+      final p0 = a[i][0], s0 = a[i][1], p1 = a[i + 1][0], s1 = a[i + 1][1];
+      if (paceMinPerKm >= p0 && paceMinPerKm <= p1) {
+        final t = (paceMinPerKm - p0) / (p1 - p0);
+        return s0 + (s1 - s0) * t;
+      }
+    }
+    return a.last[1];
+  }
+
+  double get _targetPaceMin => _s.paceMinutes + _s.paceSeconds / 60.0;
+
+  // 속도(m/분) = 케이던스(spm) × 보폭(m). 목표 페이스를 슬로우 조깅 표준 보폭으로
+  // 나눠 필요한 케이던스를 구한 뒤, 선택 가능한 5단위 값으로 반올림
   int? get _recommendedBpm {
-    final stride = _measuredStride;
-    if (stride == null || stride <= 0) return null;
-    final paceMin = _s.paceMinutes + _s.paceSeconds / 60.0;
-    if (paceMin <= 0) return null;
-    final speedMPerMin = 1000 / paceMin;
-    return (speedMPerMin / stride).round();
+    final pace = _targetPaceMin;
+    if (pace <= 0) return null;
+    final raw = (1000 / pace) / _slowJogStrideFor(pace);
+    final rounded = (raw / 5).round() * 5;
+    return rounded.clamp(_minBpm, _maxBpm);
   }
 
   void _update(VoidCallback fn) {
@@ -243,11 +275,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // 목표 페이스 + 지난 기록의 실측 보폭으로 계산한 권장 BPM.
-  // (속도 = 케이던스 × 보폭 이므로 페이스만으로는 BPM이 정해지지 않고 보폭이 필요함)
+  // 목표 페이스 → 슬로우 조깅 표준 보폭 → 권장 BPM.
+  // 실측 보폭이 있으면 "지금 내 보폭"을 함께 보여줘 얼마나 줄여야 하는지 알 수 있게 함
   Widget _buildBpmSuggestionCard() {
     final bpm = _recommendedBpm!;
-    final stride = _measuredStride!;
+    final refStride = _slowJogStrideFor(_targetPaceMin);
+    final mine = _measuredStride;
     final already = bpm == _s.bpm;
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 14, 16, 14),
@@ -270,7 +303,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  already ? '현재 BPM이 목표 페이스에 맞습니다' : '이 페이스엔 $bpm BPM 권장',
+                  already ? '목표 페이스에 맞는 BPM입니다' : '이 페이스엔 $bpm BPM 권장',
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -279,7 +312,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '내 보폭 ${(stride * 100).round()}cm 기준 (지난 기록에서 계산)',
+                  mine == null
+                      ? '슬로우 조깅 보폭 ${(refStride * 100).round()}cm 기준'
+                      : '보폭 ${(refStride * 100).round()}cm로 잔발 '
+                          '(지난 러닝 ${(mine * 100).round()}cm)',
                   style: TextStyle(fontSize: 12, color: _s.preset.grey),
                 ),
               ],
@@ -663,10 +699,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ── 다이얼로그 ──────────────────────────────────────────────────────────────
 
-  // 원래 140~200(10 단위)이었는데, 실측 보폭으로 계산한 권장 BPM이 느린 페이스에서는
-  // 110~130대로 나와 선택 자체가 불가능했음 → 100~200을 5 단위로 넓히고 휠 피커로 통일
+  // 140~200을 5단위로. 슬로우 조깅 권장 대역(155~190)을 세밀하게 고를 수 있게
+  // 기존 10단위에서 5단위로만 좁힌 것(하한 140은 유지)
   void _showBpmPicker() {
-    const minBpm = 100, maxBpm = 200, step = 5;
+    const minBpm = _minBpm, maxBpm = _maxBpm, step = _bpmStep;
     const count = (maxBpm - minBpm) ~/ step + 1;
     var selectedIndex = ((_s.bpm - minBpm) / step).round().clamp(0, count - 1);
     showDialog(
