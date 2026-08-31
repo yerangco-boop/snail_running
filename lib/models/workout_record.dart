@@ -20,6 +20,9 @@ class WorkoutRecord {
   final List<LatLng>? lapCompletionPoints;
   // 각 바퀴가 완료된 시점의 누적 경과초 — 이력 상세에서 랩별 구간 기록으로 표시
   final List<int>? lapSplitSeconds;
+  // 각 바퀴가 완료된 시점의 실제 GPS 누적 거리(km) — 랩별 누적거리/구간페이스를
+  // 사용자가 입력한 "코스 1바퀴 거리" 대신 실측값으로 계산하기 위해 저장
+  final List<double>? lapSplitDistanceKm;
 
   const WorkoutRecord({
     this.id,
@@ -37,6 +40,7 @@ class WorkoutRecord {
     this.routePoints,
     this.lapCompletionPoints,
     this.lapSplitSeconds,
+    this.lapSplitDistanceKm,
   });
 
   Map<String, dynamic> toMap() => {
@@ -61,6 +65,9 @@ class WorkoutRecord {
     'lap_splits_json': (lapSplitSeconds != null && lapSplitSeconds!.isNotEmpty)
         ? jsonEncode(lapSplitSeconds)
         : null,
+    'lap_dist_json': (lapSplitDistanceKm != null && lapSplitDistanceKm!.isNotEmpty)
+        ? jsonEncode(lapSplitDistanceKm)
+        : null,
   };
 
   factory WorkoutRecord.fromMap(Map<String, dynamic> map) => WorkoutRecord(
@@ -80,6 +87,7 @@ class WorkoutRecord {
     routePoints: _parseRouteJson(map['route_json'] as String?),
     lapCompletionPoints: _parseRouteJson(map['lap_points_json'] as String?),
     lapSplitSeconds: _parseIntListJson(map['lap_splits_json'] as String?),
+    lapSplitDistanceKm: _parseDoubleListJson(map['lap_dist_json'] as String?),
   );
 
   static List<int>? _parseIntListJson(String? json) {
@@ -87,6 +95,16 @@ class WorkoutRecord {
     try {
       final decoded = jsonDecode(json) as List;
       return decoded.map((e) => (e as num).toInt()).toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static List<double>? _parseDoubleListJson(String? json) {
+    if (json == null || json.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(json) as List;
+      return decoded.map((e) => (e as num).toDouble()).toList();
     } catch (_) {
       return null;
     }
@@ -109,10 +127,6 @@ class WorkoutRecord {
 
   bool get hasRoute => routePoints != null && routePoints!.isNotEmpty;
 
-  // 랩 × 코스 1바퀴 거리로 추정한 거리 — GPS 거리의 정확도를 앱 자체로 교차검증하는 기준선
-  double estimatedLapDistanceKm(double lapDistanceMeters) =>
-      lapCount * lapDistanceMeters / 1000.0;
-
   // 랩별 구간 시간(초) — 저장된 "누적 경과초"의 차분으로 계산
   List<int> get lapIntervalSeconds {
     final splits = lapSplitSeconds;
@@ -124,6 +138,25 @@ class WorkoutRecord {
       prev = s;
     }
     return out;
+  }
+
+  // 랩별 구간 거리(km) — 저장된 "누적 거리"의 차분. v21 이전 기록에는 없어서 빈 리스트
+  List<double> get lapIntervalKm {
+    final splits = lapSplitDistanceKm;
+    if (splits == null || splits.isEmpty) return const [];
+    final out = <double>[];
+    var prev = 0.0;
+    for (final d in splits) {
+      out.add(d - prev);
+      prev = d;
+    }
+    return out;
+  }
+
+  // 실측 보폭(m) = 이동거리 / 걸음 수. 목표 페이스에 맞는 메트로놈 BPM을 역산할 때 씀
+  double? get strideMeters {
+    if (totalSteps <= 0 || distanceKm <= 0.1) return null;
+    return distanceKm * 1000 / totalSteps;
   }
 
   bool get hasWeather =>

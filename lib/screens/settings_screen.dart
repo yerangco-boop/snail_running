@@ -4,6 +4,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/app_settings.dart';
+import '../services/database_service.dart';
 import '../services/file_logger.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -32,16 +33,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ? null
       : 'v${_packageInfo!.version} (${_packageInfo!.buildNumber})';
 
+  // 지난 기록에서 계산한 실측 보폭(m). 목표 페이스에 맞는 BPM을 역산하는 데 씀
+  double? _measuredStride;
+
   @override
   void initState() {
     super.initState();
     _loadVersion();
+    _loadStride();
   }
 
   Future<void> _loadVersion() async {
     final info = await PackageInfo.fromPlatform();
     if (!mounted) return;
     setState(() => _packageInfo = info);
+  }
+
+  // 보폭 = 이동거리 / 걸음 수. 걸음 수가 저장되기 시작한 기록(v20+)만 대상으로
+  // 최근 5개를 평균 — 한 세션만 쓰면 그날 컨디션에 좌우되기 쉬움
+  Future<void> _loadStride() async {
+    try {
+      final records = await DatabaseService.instance.getWorkouts();
+      final strides = records
+          .map((r) => r.strideMeters)
+          .whereType<double>()
+          .take(5)
+          .toList();
+      if (strides.isEmpty || !mounted) return;
+      final avg = strides.reduce((a, b) => a + b) / strides.length;
+      setState(() => _measuredStride = avg);
+    } catch (e) {
+      debugPrint('[Settings] 보폭 계산 실패: $e');
+    }
+  }
+
+  // 속도(m/분) = 케이던스(spm) × 보폭(m) 관계에서 역산한 권장 BPM
+  int? get _recommendedBpm {
+    final stride = _measuredStride;
+    if (stride == null || stride <= 0) return null;
+    final paceMin = _s.paceMinutes + _s.paceSeconds / 60.0;
+    if (paceMin <= 0) return null;
+    final speedMPerMin = 1000 / paceMin;
+    return (speedMPerMin / stride).round();
   }
 
   void _update(VoidCallback fn) {
@@ -111,6 +144,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               onTap: _showPacePicker,
             ),
+            if (_recommendedBpm != null) ...[
+              const SizedBox(height: 8),
+              _buildBpmSuggestionCard(),
+            ],
             const SizedBox(height: 8),
 
             _settingCard(
@@ -119,15 +156,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               trailing: Text("${_s.weightKg.toStringAsFixed(1)} kg",
                   style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
               onTap: _showWeightPicker,
-            ),
-            const SizedBox(height: 8),
-
-            _settingCard(
-              icon: Icons.replay_circle_filled_outlined,
-              label: "코스 1바퀴 거리",
-              trailing: Text("${_s.lapDistanceMeters.toStringAsFixed(0)} m",
-                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
-              onTap: _showLapDistancePicker,
             ),
             const SizedBox(height: 8),
 
@@ -211,6 +239,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildAboutCard(),
           ],
         ),
+      ),
+    );
+  }
+
+  // 목표 페이스 + 지난 기록의 실측 보폭으로 계산한 권장 BPM.
+  // (속도 = 케이던스 × 보폭 이므로 페이스만으로는 BPM이 정해지지 않고 보폭이 필요함)
+  Widget _buildBpmSuggestionCard() {
+    final bpm = _recommendedBpm!;
+    final stride = _measuredStride!;
+    final already = bpm == _s.bpm;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 14, 16, 14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: _s.preset.cardGradient,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _accent.withValues(alpha: 0.45)),
+        boxShadow: _s.preset.cardShadow,
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.auto_awesome_outlined, color: _accent, size: 22),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  already ? '현재 BPM이 목표 페이스에 맞습니다' : '이 페이스엔 $bpm BPM 권장',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: _s.preset.onBackground,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '내 보폭 ${(stride * 100).round()}cm 기준 (지난 기록에서 계산)',
+                  style: TextStyle(fontSize: 12, color: _s.preset.grey),
+                ),
+              ],
+            ),
+          ),
+          if (!already)
+            TextButton(
+              onPressed: () => _update(() => _s.bpm = bpm),
+              child: Text('적용',
+                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+            ),
+        ],
       ),
     );
   }
@@ -582,30 +663,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ── 다이얼로그 ──────────────────────────────────────────────────────────────
 
+  // 원래 140~200(10 단위)이었는데, 실측 보폭으로 계산한 권장 BPM이 느린 페이스에서는
+  // 110~130대로 나와 선택 자체가 불가능했음 → 100~200을 5 단위로 넓히고 휠 피커로 통일
   void _showBpmPicker() {
-    const bpms = [140, 150, 160, 170, 180, 190, 200];
+    const minBpm = 100, maxBpm = 200, step = 5;
+    const count = (maxBpm - minBpm) ~/ step + 1;
+    var selectedIndex = ((_s.bpm - minBpm) / step).round().clamp(0, count - 1);
     showDialog(
       context: context,
-      builder: (_) => SimpleDialog(
+      builder: (_) => AlertDialog(
         backgroundColor: _surface,
-        title: const Text("BPM 선택"),
-        children: bpms
-            .map((b) => SimpleDialogOption(
-                  onPressed: () {
-                    _update(() => _s.bpm = b);
-                    Navigator.pop(context);
-                  },
-                  child: Text(
-                    "$b BPM",
-                    style: TextStyle(
-                      fontWeight:
-                          b == _s.bpm ? FontWeight.bold : FontWeight.normal,
-                      color: b == _s.bpm ? _accent : _s.preset.onSurface,
-                      fontSize: 16,
-                    ),
-                  ),
-                ))
-            .toList(),
+        title: const Text("메트로놈 BPM"),
+        content: SizedBox(
+          height: 180,
+          child: _wheelColumn(
+            itemCount: count,
+            initialIndex: selectedIndex,
+            onChanged: (i) => selectedIndex = i,
+            label: (i) => '${minBpm + i * step} BPM',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _update(() => _s.bpm = minBpm + selectedIndex * step);
+              Navigator.pop(context);
+            },
+            child: Text("확인", style: TextStyle(color: _accent)),
+          ),
+        ],
       ),
     );
   }
@@ -664,38 +750,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // 코스 1바퀴 거리 — "랩 × 이 값"이 GPS 거리 검증용 기준선이 되므로 실측값을 넣을 것
-  void _showLapDistancePicker() {
-    const minM = 50.0, maxM = 1000.0, step = 10.0;
-    final count = ((maxM - minM) / step).round() + 1;
-    var selectedIndex =
-        ((_s.lapDistanceMeters - minM) / step).round().clamp(0, count - 1);
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: _surface,
-        title: const Text("코스 1바퀴 거리 (m)"),
-        content: SizedBox(
-          height: 180,
-          child: _wheelColumn(
-            itemCount: count,
-            initialIndex: selectedIndex,
-            onChanged: (i) => selectedIndex = i,
-            label: (i) => '${(minM + i * step).toStringAsFixed(0)} m',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              _update(() => _s.lapDistanceMeters = minM + selectedIndex * step);
-              Navigator.pop(context);
-            },
-            child: Text("확인", style: TextStyle(color: _accent)),
-          ),
-        ],
-      ),
-    );
-  }
 
   void _showDistancePicker() {
     const minKm = 1.0, maxKm = 50.0, step = 0.1;

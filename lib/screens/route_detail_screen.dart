@@ -158,7 +158,6 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
   // ── 통계 ──────────────────────────────────────────────────────────────────
   Widget _buildStatsCard() {
     final r = widget.record;
-    final lapKm = r.estimatedLapDistanceKm(widget.settings.lapDistanceMeters);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: _cardDecoration(),
@@ -195,8 +194,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
           _statRow('평균 케이던스', '${r.avgCadence} spm'),
           if (r.totalSteps > 0) _statRow('총 걸음 수', '${_formatSteps(r.totalSteps)} 보'),
           _statRow('칼로리', '${r.caloriesBurned.toStringAsFixed(0)} kcal'),
-          if (r.lapCount > 0)
-            _statRow('랩 기준 추정 거리', '${lapKm.toStringAsFixed(2)} km'),
+          if (r.lapCount > 0) _statRow('바퀴 수', '${r.lapCount}바퀴'),
           _statRow('당시 날씨', r.weatherSummary),
         ],
       ),
@@ -225,7 +223,10 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
   Widget _buildLapCard() {
     final r = widget.record;
     final intervals = r.lapIntervalSeconds;
-    final lapMeters = widget.settings.lapDistanceMeters;
+    // 랩 완료 시점의 실측 GPS 누적 거리 / 구간 거리. v21 이전 기록에는 없어서 비어 있음
+    final cumKm = r.lapSplitDistanceKm ?? const <double>[];
+    final intervalKm = r.lapIntervalKm;
+    final hasDistance = cumKm.length == intervals.length && intervals.isNotEmpty;
 
     // 가장 빠른/느린 랩을 찾아 강조 (랩이 2개 이상이고 서로 다를 때만 의미 있음)
     var fastest = -1, slowest = -1;
@@ -274,7 +275,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 12),
               child: Text(
-                '${r.lapCount}바퀴 (구간 시간은 v18 이후 기록부터 표시됩니다)',
+                '${r.lapCount}바퀴 (랩별 상세 기록은 v18 이후 기록부터 표시됩니다)',
                 style: TextStyle(fontSize: 13, color: _p.grey),
               ),
             )
@@ -318,7 +319,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                     ),
                     Expanded(
                       child: Text(
-                        '${((i + 1) * lapMeters / 1000).toStringAsFixed(2)} km',
+                        hasDistance ? '${cumKm[i].toStringAsFixed(2)} km' : '--',
                         textAlign: TextAlign.right,
                         style: TextStyle(fontSize: 14, color: _p.onBackground),
                       ),
@@ -338,7 +339,9 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                     ),
                     Expanded(
                       child: Text(
-                        _fmtLapPace(intervals[i], lapMeters),
+                        hasDistance
+                            ? _fmtLapPace(intervals[i], intervalKm[i] * 1000)
+                            : '--',
                         textAlign: TextAlign.right,
                         style: TextStyle(fontSize: 14, color: _p.onBackground),
                       ),

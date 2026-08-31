@@ -18,7 +18,7 @@ class DatabaseService {
     final path = join(await getDatabasesPath(), 'snail_running.db');
     return openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: (db, _) => db.execute('''
         CREATE TABLE workouts(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,7 +35,8 @@ class DatabaseService {
           route_json TEXT,
           lap_count INTEGER NOT NULL DEFAULT 0,
           lap_points_json TEXT,
-          lap_splits_json TEXT
+          lap_splits_json TEXT,
+          lap_dist_json TEXT
         )
       '''),
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -68,6 +69,9 @@ class DatabaseService {
         if (oldVersion < 8) {
           await db.execute(
               'ALTER TABLE workouts ADD COLUMN total_steps INTEGER NOT NULL DEFAULT 0');
+        }
+        if (oldVersion < 9) {
+          await db.execute('ALTER TABLE workouts ADD COLUMN lap_dist_json TEXT');
         }
       },
     );

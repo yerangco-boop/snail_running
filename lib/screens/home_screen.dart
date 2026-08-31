@@ -117,6 +117,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final List<LatLng> _lapCompletionPoints = [];
   // 각 랩이 완료된 시점의 누적 경과초 — 이력 상세에서 랩별 구간 기록으로 표시
   final List<int> _lapSplitSeconds = [];
+  // 각 랩이 완료된 시점의 실제 GPS 누적 거리(km).
+  // 예전에는 설정에 사용자가 입력한 "코스 1바퀴 거리"를 곱해 표시했는데, 그 값이 실제와
+  // 다르면 랩 표의 누적거리·구간페이스가 통째로 틀어졌음 → 실측값을 그대로 저장해서 씀
+  final List<double> _lapSplitDistanceKm = [];
   // 이번 랩에서 시작점으로부터 실제로 도달한 최대 이격거리(진단 로그용 — 임계값이
   // 코스 크기에 맞는지 로그만 보고 판단할 수 있게 함)
   double _lapMaxAwayMeters = 0.0;
@@ -268,11 +272,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
-  // 사용자가 설정 앱에서 "항상 허용"으로 바꾸고 돌아오면 경고 배너가 즉시 사라지도록
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (state == AppLifecycleState.resumed) _refreshPermissionStatus();
+    if (state != AppLifecycleState.resumed) return;
+    // 설정 앱에서 "항상 허용"으로 바꾸고 돌아오면 경고 배너가 즉시 사라지도록
+    _refreshPermissionStatus();
+    // 전화 수신 등으로 오디오를 뺏기면 메트로놈이 조용해진 채 돌아오지 않음 —
+    // 지금 구성은 다른 앱과 겹쳐 재생하려고 오디오 포커스를 요청하지 않기(AudioFocus.none)
+    // 때문에 "다시 재생해도 된다"는 통지도 못 받음. 그래서 앱이 다시 활성화되는 시점에
+    // 러닝 중이면 플레이어를 새로 만들어 복구시킴
+    if (_workoutState == WorkoutState.running && _s.metronomeEnabled) {
+      _restartMetronome();
+    }
+  }
+
+  // 메트로놈을 완전히 재초기화한 뒤 다시 시작 — 오디오 세션이 깨진 뒤에는 start()만으로
+  // 살아나지 않는 경우가 있어 init()부터 다시 함
+  Future<void> _restartMetronome() async {
+    try {
+      _metronome.stop();
+      await _metronome.init(
+        mixWithOtherAudio: _s.mixWithOtherAudio,
+        volume: _s.metronomeVolume,
+      );
+      _appliedMixSetting = _s.mixWithOtherAudio;
+      _appliedMetronomeVolume = _s.metronomeVolume;
+      if (_workoutState == WorkoutState.running && _s.metronomeEnabled) {
+        await _metronome.start(_s.bpm);
+      }
+      FileLogger.instance.log('[Metro] 재초기화 완료 (bpm=${_s.bpm}, vol=${_s.metronomeVolume})');
+    } catch (e) {
+      FileLogger.instance.log('[Metro] 재초기화 실패: $e');
+    }
   }
 
   @override
@@ -377,6 +409,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       routePoints: List<LatLng>.from(_routePoints),
       lapCompletionPoints: List<LatLng>.from(_lapCompletionPoints),
       lapSplitSeconds: List<int>.from(_lapSplitSeconds),
+      lapSplitDistanceKm: List<double>.from(_lapSplitDistanceKm),
     ).save();
   }
 
@@ -473,10 +506,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   // 러닝 중에도 즉시 메트로놈을 껐다 켤 수 있게 함 (설정 화면까지 안 들어가도 되도록).
   // 값은 AppSettings에 저장되므로 다음 러닝에도 그대로 유지됨
+  // 켤 때는 단순 start가 아니라 재초기화까지 하므로, 통화 등으로 소리가 끊겼을 때
+  // "껐다 켜면 되살아나는" 수동 복구 버튼 역할도 함
   void _toggleMetronome() {
     setState(() => _s.metronomeEnabled = !_s.metronomeEnabled);
     if (_s.metronomeEnabled) {
-      if (_workoutState == WorkoutState.running) _metronome.start(_s.bpm);
+      _restartMetronome();
     } else {
       _metronome.stop();
     }
@@ -581,6 +616,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _hasLeftLapZone = false;
     _lapCompletionPoints.clear();
     _lapSplitSeconds.clear();
+    _lapSplitDistanceKm.clear();
     _lapMaxAwayMeters = 0.0;
     _lastLapSeconds = 0;
     _workoutStartedAt = DateTime.now();
@@ -844,6 +880,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _lapCount++;
         _lapCompletionPoints.add(point);
         _lapSplitSeconds.add(_seconds);
+        _lapSplitDistanceKm.add(_distanceKm);
       });
       _lapMaxAwayMeters = 0.0;
     }
@@ -932,6 +969,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       routePoints: List<LatLng>.from(_routePoints),
       lapCompletionPoints: List<LatLng>.from(_lapCompletionPoints),
       lapSplitSeconds: List<int>.from(_lapSplitSeconds),
+      lapSplitDistanceKm: List<double>.from(_lapSplitDistanceKm),
     );
     await DatabaseService.instance.insertWorkout(record);
   }
@@ -977,6 +1015,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _hasLeftLapZone = false;
       _lapCompletionPoints.clear();
       _lapSplitSeconds.clear();
+      _lapSplitDistanceKm.clear();
       _lapMaxAwayMeters = 0.0;
       _lastLapSeconds = 0;
       _gpsRejectedTotal = 0;
