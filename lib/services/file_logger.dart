@@ -24,7 +24,9 @@ class FileLogger {
       final dir = await getApplicationDocumentsDirectory();
       final now = DateTime.now();
       final stamp = now.toIso8601String().replaceAll(RegExp(r'[:.]'), '-');
-      _file = File('${dir.path}/snail_debug_$stamp.log');
+      // 확장자 .log는 카카오톡 등 일부 공유 대상이 MIME 타입을 못 알아봐서
+      // 파일 첨부 없이 텍스트 캡션만 전송되는 문제가 있었음 — .txt(text/plain)로 변경
+      _file = File('${dir.path}/snail_debug_$stamp.txt');
       await _file!.writeAsString(
         '=== 달팽이 러닝 디버그 로그 시작 ${now.toIso8601String()} ===\n',
         mode: FileMode.write,

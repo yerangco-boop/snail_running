@@ -2,7 +2,7 @@ name: snail_running
 description: "A custom slow jogging app for Hong Jeong-pyo"
 publish_to: 'none'
 
-version: 1.0.5+22
+version: 1.0.5+23
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -45,6 +45,7 @@ flutter:
   assets:
     - assets/sounds/
     - assets/icon/
+    - assets/images/
 
 flutter_launcher_icons:
   android: true

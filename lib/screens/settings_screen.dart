@@ -126,7 +126,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
       return;
     }
-    await Share.shareXFiles([XFile(path)], text: '달팽이 러닝 디버그 로그');
+    await Share.shareXFiles(
+      [XFile(path, mimeType: 'text/plain')],
+      text: '달팽이 러닝 디버그 로그',
+    );
   }
 
   @override
