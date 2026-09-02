@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
@@ -116,6 +118,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // 실외 테스트 진단 로그(GPS/케이던스/바퀴)를 USB 연결 없이도 확인할 수 있도록
   // 카톡/메일 등 아무 앱으로나 바로 공유
+  // 카카오톡 등 일부 공유 대상이 XFile 첨부를 조용히 누락시키는 문제가 있어(확장자를
+  // .txt로 바꿔도 재발) OS 공유 시트에만 의존하지 않고, 로그 내용을 앱 안에서 직접
+  // 보여주고 클립보드 복사를 1차 수단으로 제공. 파일 공유는 되는 사람은 되니 선택지로만 남김
   Future<void> _shareDebugLog() async {
     await FileLogger.instance.flushNow();
     final path = FileLogger.instance.filePath;
@@ -126,9 +131,102 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
       return;
     }
-    await Share.shareXFiles(
-      [XFile(path, mimeType: 'text/plain')],
-      text: '달팽이 러닝 디버그 로그',
+
+    String content;
+    try {
+      content = await File(path).readAsString();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('로그 파일을 읽지 못했습니다: $e')),
+      );
+      return;
+    }
+
+    if (content.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('로그 파일이 비어 있습니다.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _s.preset.background,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (ctx, scrollController) {
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Row(
+                    children: [
+                      Text('디버그 로그 (${content.length}자)',
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: _s.preset.onBackground)),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: () async {
+                          await Clipboard.setData(ClipboardData(text: content));
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              const SnackBar(
+                                  content: Text('클립보드에 복사했습니다. 카톡 등에 붙여넣기 해주세요.')),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.copy_rounded, size: 18),
+                        label: const Text('복사'),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _s.preset.surface,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: SingleChildScrollView(
+                      controller: scrollController,
+                      child: SelectableText(
+                        content,
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                            color: _s.preset.onSurface),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: OutlinedButton.icon(
+                    onPressed: () => Share.shareXFiles(
+                      [XFile(path, mimeType: 'text/plain')],
+                      text: '달팽이 러닝 디버그 로그',
+                    ),
+                    icon: const Icon(Icons.ios_share, size: 16),
+                    label: const Text('파일로 공유 시도 (선택)'),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
