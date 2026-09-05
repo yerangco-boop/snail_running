@@ -28,10 +28,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Color get _accent => _s.accent;
   Color get _surface => _s.preset.surface;
 
-  // 슬로우 조깅 권장 케이던스 대역을 담을 수 있도록 5단위로 선택
+  // 목표 페이스 ↔ BPM이 양방향으로 연동되므로 1단위로 고를 수 있어야 함.
+  // (5단위로 두면 BPM 한 칸이 페이스를 1분 이상 움직여서 되돌림이 성립하지 않았음 —
+  //  1단위에서는 한 칸이 7~18초/km이고 페이스→BPM→페이스 왕복 오차가 0초임을 검산함)
   static const int _minBpm = 140;
   static const int _maxBpm = 200;
-  static const int _bpmStep = 5;
+  static const int _bpmStep = 1;
+  // 표준 보폭 앵커표가 정의된 페이스 구간 — 이 밖은 외삽하지 않고 끝값으로 고정
+  static const double _minInvertiblePaceMin = 7.0;
+  static const double _maxInvertiblePaceMin = 15.0;
 
   // 실기기에 실제로 설치된 앱 이름/versionName/versionCode 확인용 (하드코딩이 아니라
   // 빌드 시점 pubspec.yaml의 version: X.Y.Z+N에서 그대로 채워짐 — 매 빌드마다 자동 갱신)
@@ -102,13 +107,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double get _targetPaceMin => _s.paceMinutes + _s.paceSeconds / 60.0;
 
   // 속도(m/분) = 케이던스(spm) × 보폭(m). 목표 페이스를 슬로우 조깅 표준 보폭으로
-  // 나눠 필요한 케이던스를 구한 뒤, 선택 가능한 5단위 값으로 반올림
+  // 나눠 필요한 케이던스를 구함
+  int _bpmForPace(double paceMinPerKm) {
+    final raw = (1000 / paceMinPerKm) / _slowJogStrideFor(paceMinPerKm);
+    return raw.round().clamp(_minBpm, _maxBpm);
+  }
+
   int? get _recommendedBpm {
     final pace = _targetPaceMin;
     if (pace <= 0) return null;
-    final raw = (1000 / pace) / _slowJogStrideFor(pace);
-    final rounded = (raw / 5).round() * 5;
-    return rounded.clamp(_minBpm, _maxBpm);
+    return _bpmForPace(pace);
+  }
+
+  // ── 역방향: BPM → 목표 페이스 ─────────────────────────────────────────────
+  // 표준 보폭이 페이스의 함수라 BPM(페이스) 관계가 닫힌 형태로 안 풀리고, 게다가
+  // 10:00~11:00 구간은 속도 감소와 보폭 감소가 거의 상쇄되어 BPM이 175 부근에서
+  // 평평해진다(= 같은 BPM에 해당하는 페이스가 여럿). 그래서 수치적으로 후보를
+  // 훑되 **현재 페이스에서 가장 가까운 해**를 고른다. 사용자가 메트로놈을 한 칸
+  // 줄였을 때 페이스도 한 칸만 움직이는 게 자연스럽고, 이 규칙 덕에
+  // 페이스→BPM→페이스 왕복 오차가 0초가 된다(구현 전 수치 검산으로 확인).
+  double _paceMinForBpm(int targetBpm, double currentPaceMin) {
+    const stepMin = 1 / 60.0; // 1초 해상도
+    double? bestExact;
+    double? bestApprox;
+    var bestApproxErr = double.infinity;
+    for (var p = _minInvertiblePaceMin; p <= _maxInvertiblePaceMin; p += stepMin) {
+      final b = (1000 / p) / _slowJogStrideFor(p);
+      if (b.round() == targetBpm) {
+        if (bestExact == null ||
+            (p - currentPaceMin).abs() < (bestExact - currentPaceMin).abs()) {
+          bestExact = p;
+        }
+      }
+      final err = (b - targetBpm).abs();
+      if (err < bestApproxErr - 1e-9 ||
+          (err < bestApproxErr + 1e-9 &&
+              bestApprox != null &&
+              (p - currentPaceMin).abs() < (bestApprox - currentPaceMin).abs())) {
+        bestApproxErr = err;
+        bestApprox = p;
+      }
+    }
+    final result = bestExact ?? bestApprox ?? currentPaceMin;
+    // 초 단위로 정리해서 페이스 피커가 다룰 수 있는 값으로 맞춤
+    final totalSeconds = (result * 60).round();
+    return totalSeconds / 60.0;
   }
 
   void _update(VoidCallback fn) {
@@ -376,13 +419,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // 목표 페이스 → 슬로우 조깅 표준 보폭 → 권장 BPM.
-  // 실측 보폭이 있으면 "지금 내 보폭"을 함께 보여줘 얼마나 줄여야 하는지 알 수 있게 함
+  // 목표 페이스 ↔ BPM ↔ 보폭의 관계를 한 줄로 보여주는 카드.
+  // 두 값이 양방향으로 연동되므로 보통은 항상 맞아 있고(= 안내만 함), 이전 버전에서
+  // 저장된 값이 어긋나 있을 때만 [맞추기] 버튼이 나타남
   Widget _buildBpmSuggestionCard() {
     final bpm = _recommendedBpm!;
     final refStride = _slowJogStrideFor(_targetPaceMin);
     final mine = _measuredStride;
     final already = bpm == _s.bpm;
+    final paceLabel =
+        '${_s.paceMinutes}:${_s.paceSeconds.toString().padLeft(2, '0')}/km';
+    // 앵커표 범위(7~15분/km)를 벗어나면 BPM↔페이스 되돌림이 성립하지 않으므로 알려줌
+    final outOfRange = _targetPaceMin < _minInvertiblePaceMin ||
+        _targetPaceMin > _maxInvertiblePaceMin;
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 14, 16, 14),
       decoration: BoxDecoration(
@@ -404,7 +453,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  already ? '목표 페이스에 맞는 BPM입니다' : '이 페이스엔 $bpm BPM 권장',
+                  already
+                      ? '$paceLabel · ${_s.bpm} BPM · 보폭 ${(refStride * 100).round()}cm'
+                      : '이 페이스엔 $bpm BPM',
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -413,10 +464,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  mine == null
-                      ? '슬로우 조깅 보폭 ${(refStride * 100).round()}cm 기준'
-                      : '보폭 ${(refStride * 100).round()}cm로 잔발 '
-                          '(지난 러닝 ${(mine * 100).round()}cm)',
+                  outOfRange
+                      ? '7:00~15:00/km 밖에서는 BPM을 바꿔도 페이스가 따라오지 않습니다'
+                      : mine == null
+                          ? '메트로놈을 바꾸면 목표 페이스도 함께 조정됩니다'
+                          : '이 보폭으로 잔발 (지난 러닝 ${(mine * 100).round()}cm)',
                   style: TextStyle(fontSize: 12, color: _s.preset.grey),
                 ),
               ],
@@ -425,7 +477,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (!already)
             TextButton(
               onPressed: () => _update(() => _s.bpm = bpm),
-              child: Text('적용',
+              child: Text('맞추기',
                   style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
             ),
         ],
@@ -803,8 +855,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ── 다이얼로그 ──────────────────────────────────────────────────────────────
 
-  // 140~200을 5단위로. 슬로우 조깅 권장 대역(155~190)을 세밀하게 고를 수 있게
-  // 기존 10단위에서 5단위로만 좁힌 것(하한 140은 유지)
+  // 140~200을 1단위로. BPM을 바꾸면 목표 페이스가 따라 바뀐다 —
+  // "달려보니 메트로놈이 좀 빠른 것 같아서 줄인다"가 곧 "목표 페이스를 늦춘다"이므로
   void _showBpmPicker() {
     const minBpm = _minBpm, maxBpm = _maxBpm, step = _bpmStep;
     const count = (maxBpm - minBpm) ~/ step + 1;
@@ -826,7 +878,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () {
-              _update(() => _s.bpm = minBpm + selectedIndex * step);
+              final newBpm = minBpm + selectedIndex * step;
+              _update(() {
+                _s.bpm = newBpm;
+                // BPM에서 목표 페이스를 되돌려 계산 (표준 보폭 기준)
+                final pace = _paceMinForBpm(newBpm, _targetPaceMin);
+                final totalSec = (pace * 60).round();
+                _s.paceMinutes = totalSec ~/ 60;
+                _s.paceSeconds = totalSec % 60;
+              });
               Navigator.pop(context);
             },
             child: Text("확인", style: TextStyle(color: _accent)),
@@ -960,6 +1020,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _update(() {
                 _s.paceMinutes = selectedMin;
                 _s.paceSeconds = selectedSec;
+                // 페이스를 바꾸면 메트로놈 BPM도 곧바로 따라감 (예전엔 [적용]을
+                // 눌러야 반영돼서, 목표만 바꾸고 메트로놈은 옛 박자인 채로 뛰기 쉬웠음)
+                _s.bpm = _bpmForPace(selectedMin + selectedSec / 60.0);
               });
               Navigator.pop(context);
             },
