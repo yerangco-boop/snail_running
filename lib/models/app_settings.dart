@@ -6,6 +6,12 @@ export 'theme_preset.dart';
 
 enum GoalType { distance, time }
 
+// 메트로놈 음량 하한. 슬라이더를 스크롤하다 실수로 왼쪽 끝을 건드리면 값이 0이 되어
+// "메트로놈은 켜져 있는데 아무 소리도 안 나고, BPM을 바꾸든 껐다 켜든 반응이 없는"
+// 상태가 됨(2026-09-05 실측 로그의 vol=0.0). 무음이 필요하면 메트로놈 스위치를 끄면
+// 되므로, 음량 자체는 0까지 내려가지 않게 막는다.
+const double kMinMetronomeVolume = 0.15;
+
 class AppSettings {
   int bpm;
   double targetDistanceKm;
@@ -75,7 +81,9 @@ class AppSettings {
     ttsVoiceName = prefs.getString(_kTtsVoiceName) ?? ttsVoiceName;
     mixWithOtherAudio = prefs.getBool(_kMixWithOtherAudio) ?? mixWithOtherAudio;
     metronomeEnabled = prefs.getBool(_kMetronomeEnabled) ?? metronomeEnabled;
-    metronomeVolume = prefs.getDouble(_kMetronomeVolume) ?? metronomeVolume;
+    // 예전 버전에서 0으로 저장된 값이 남아 있어도 하한으로 끌어올림
+    metronomeVolume =
+        (prefs.getDouble(_kMetronomeVolume) ?? metronomeVolume).clamp(kMinMetronomeVolume, 1.0);
     weightKg = prefs.getDouble(_kWeightKg) ?? weightKg;
     keepScreenOn = prefs.getBool(_kKeepScreenOn) ?? keepScreenOn;
     final presetName = prefs.getString(_kPresetName);

@@ -17,6 +17,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/weather_service.dart';
 import '../services/file_logger.dart';
 import '../services/location_settings_factory.dart';
+import '../services/background_permissions.dart';
 import '../services/workout_snapshot.dart';
 import '../utils/route_utils.dart';
 
@@ -84,6 +85,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 특정 구간만 보지 않고도 로그 파일 전체에서 추적할 수 있게 함
   int _gpsRejectedTotal = 0;
   int _gpsAcceptedTotal = 0;
+  // ── GPS 스트림 워치독 (2026-09-05) ────────────────────────────────────────
+  // 9/5 실측에서 화면을 끄자 가속도계는 계속 들어오는데(= 프로세스는 살아 있는데)
+  // 위치 콜백만 4분 넘게 끊겼고, 다시 켰을 때 그 구간이 직선 103m 한 방으로 합쳐져
+  // 실제 주행 경로만큼의 거리가 통째로 사라졌음. 콜백이 일정 시간 이상 없으면
+  // 스트림을 다시 걸어 복구를 시도하고, 그 사실을 로그에 남긴다.
+  DateTime? _lastGpsCallbackAt;
+  Timer? _gpsWatchdogTimer;
+  int _gpsStreamRestarts = 0;
+  static const int _gpsStaleSeconds = 25;
   // 콜백 간격이 이보다 짧으면 순간속도 계산을 건너뜀 — distanceFilter가 촘촘해서(1m)
   // 아주 짧은 시간차에 콜백이 몰릴 때는 정상적인 GPS 잡음(2~5m)만으로도 순간속도가
   // 크게 튀어 오탐하기 쉬움
@@ -108,8 +118,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 물리적으로 초과 불가(정확히 80.0m가 최대)라 "충분히 멀어짐" 조건이 영영 안 걸렸음
   // → 랩이 항상 0으로 나오던 근본 원인. 여유를 두고 40m로 하향.
   static const double _lapMinAwayMeters = 40.0;
-  // 복귀 판정 반경: 아웃존(40m)의 절반 이하로 두어 히스테리시스를 확보
-  static const double _lapReturnRadiusMeters = 18.0;
+  // ── 복귀 판정을 "고정 반경"에서 "최근접 통과(CPA)"로 변경 (2026-09-05) ─────────
+  // 기존에는 시작점 반경 18m 안에 들어와야 1바퀴로 인정했는데, 9/4 실측에서 바퀴별
+  // 복귀 이격거리가 17.2m → 13.4m → 16.2m → 17.0m로 18m 경계에 붙어 있다가 5바퀴째에
+  // 넘어가 버렸고, 그 뒤로는 25분을 더 돌았는데도 바퀴가 하나도 안 잡혔음(총 4바퀴로 종료).
+  // GPS 산포(정확도 5~15m)가 고정 반경보다 크기 때문에 구조적으로 언젠가 반드시 실패함.
+  //
+  // 이제는 반경 안에 들어왔는지를 보지 않고, 시작점에 가장 가까워졌다가(최근접점)
+  // 다시 멀어지는 순간을 "지나갔다"로 판정한다. 기준점이 상대값(최근접 대비 얼마나
+  // 다시 멀어졌는가)이라 GPS가 몇 미터 밀려 있어도 그대로 성립함.
+  static const double _lapApproachMeters = 32.0;      // 이 안까지 들어와야 "복귀 시도"로 인정
+  static const double _lapDepartConfirmMeters = 8.0;  // 최근접점보다 이만큼 다시 멀어지면 통과 확정
   // 같은 지점을 GPS 잡음으로 여러 번 스쳐도 중복 카운트되지 않도록 하는 최소 랩 간격
   static const int _lapMinIntervalSeconds = 60;
 
@@ -125,6 +144,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 코스 크기에 맞는지 로그만 보고 판단할 수 있게 함)
   double _lapMaxAwayMeters = 0.0;
   int _lastLapSeconds = 0;
+  // 아웃존을 벗어난 뒤 시작점에 가장 가까이 접근했던 지점의 스냅샷 (CPA 판정용)
+  double _lapClosestSinceLeft = double.infinity;
+  LatLng? _lapClosestPoint;
+  int _lapClosestSeconds = 0;
+  double _lapClosestDistanceKm = 0.0;
 
   LatLng _applyEma(LatLng raw) {
     final prev = _emaPoint;
@@ -195,6 +219,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String? _appliedTtsVoiceName;
   bool? _appliedMixSetting;
   double? _appliedMetronomeVolume;
+  // 설정 화면에서 BPM/사용여부를 바꿨을 때 러닝 중에도 즉시 반영하기 위한 비교값.
+  // (AppSettings는 같은 인스턴스가 계속 전달되므로 didUpdateWidget의 oldWidget으로는
+  //  변경을 알 수 없음 — 마지막으로 "적용한" 값을 State에 따로 들고 비교해야 함)
+  int? _appliedBpm;
+  bool? _appliedMetronomeEnabled;
 
   // ── 날씨 ─────────────────────────────────────────────────────────────────
   final WeatherService _weatherService = WeatherService();
@@ -258,6 +287,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _applyTtsVoice();
     _appliedMixSetting = _s.mixWithOtherAudio;
     _appliedMetronomeVolume = _s.metronomeVolume;
+    _appliedBpm = _s.bpm;
+    _appliedMetronomeEnabled = _s.metronomeEnabled;
     _metronome.init(
       mixWithOtherAudio: _s.mixWithOtherAudio,
       volume: _s.metronomeVolume,
@@ -275,6 +306,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    // 화면을 끈 구간을 로그에서 정확히 짚어낼 수 있게 기록 — "GPS가 안 들어온 시간대"와
+    // "화면이 꺼져 있던 시간대"를 대조해야 백그라운드 억제 여부를 확정할 수 있음
+    FileLogger.instance.log('[LIFECYCLE] $state (러닝=${_workoutState.name})');
     if (state != AppLifecycleState.resumed) return;
     // 설정 앱에서 "항상 허용"으로 바꾸고 돌아오면 경고 배너가 즉시 사라지도록
     _refreshPermissionStatus();
@@ -290,14 +324,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 메트로놈을 완전히 재초기화한 뒤 다시 시작 — 오디오 세션이 깨진 뒤에는 start()만으로
   // 살아나지 않는 경우가 있어 init()부터 다시 함
   Future<void> _restartMetronome() async {
+    // await 사이에 didUpdateWidget이 또 들어와 중복 재초기화하지 않도록 먼저 표시
+    _appliedMixSetting = _s.mixWithOtherAudio;
+    _appliedMetronomeVolume = _s.metronomeVolume;
+    _appliedBpm = _s.bpm;
     try {
       _metronome.stop();
       await _metronome.init(
         mixWithOtherAudio: _s.mixWithOtherAudio,
         volume: _s.metronomeVolume,
       );
-      _appliedMixSetting = _s.mixWithOtherAudio;
-      _appliedMetronomeVolume = _s.metronomeVolume;
       if (_workoutState == WorkoutState.running && _s.metronomeEnabled) {
         await _metronome.start(_s.bpm);
       }
@@ -314,16 +350,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _applyTtsVoice();
     }
     if (_appliedMixSetting != _s.mixWithOtherAudio) {
-      _appliedMixSetting = _s.mixWithOtherAudio;
-      _metronome.init(
-        mixWithOtherAudio: _s.mixWithOtherAudio,
-        volume: _s.metronomeVolume,
-      );
-      _appliedMetronomeVolume = _s.metronomeVolume;
+      // init은 플레이어를 새로 만들면서 박자를 멈추므로, 러닝 중이면 다시 시작까지
+      // 해주는 _restartMetronome을 거쳐야 한다
+      _restartMetronome();
     } else if (_appliedMetronomeVolume != _s.metronomeVolume) {
       // 음량만 바뀐 경우엔 재초기화 없이 즉시 반영
       _appliedMetronomeVolume = _s.metronomeVolume;
       _metronome.setVolume(_s.metronomeVolume);
+    }
+    // BPM 변경 즉시 반영 — 설정 화면에서 BPM을 바꾸거나 "권장 BPM 적용"을 눌러도
+    // 러닝 중인 메트로놈 타이머는 그대로였음(2026-09-05 실측에서 175→150/190으로
+    // 바꿔도 박자가 안 변한 원인). updateBpm은 재생 중일 때만 타이머를 다시 건다.
+    if (_appliedBpm != _s.bpm) {
+      _appliedBpm = _s.bpm;
+      _metronome.updateBpm(_s.bpm);
+    }
+    // 설정 화면의 "메트로놈 사용" 스위치도 러닝 중 즉시 반영
+    if (_appliedMetronomeEnabled != _s.metronomeEnabled) {
+      _appliedMetronomeEnabled = _s.metronomeEnabled;
+      if (_s.metronomeEnabled) {
+        if (_workoutState == WorkoutState.running) _restartMetronome();
+      } else {
+        _metronome.stop();
+      }
     }
   }
 
@@ -375,6 +424,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _workoutTimer?.cancel();
     _countdownTimer?.cancel();
     _positionSub?.cancel();
+    _gpsWatchdogTimer?.cancel();
     _accelSub?.cancel();
     _cadenceDiagnosticTimer?.cancel();
     _snapshotTimer?.cancel();
@@ -510,6 +560,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // "껐다 켜면 되살아나는" 수동 복구 버튼 역할도 함
   void _toggleMetronome() {
     setState(() => _s.metronomeEnabled = !_s.metronomeEnabled);
+    // didUpdateWidget이 같은 변경을 한 번 더 처리하지 않도록 여기서 적용값을 맞춰둠
+    _appliedMetronomeEnabled = _s.metronomeEnabled;
     if (_s.metronomeEnabled) {
       _restartMetronome();
     } else {
@@ -619,7 +671,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _lapSplitDistanceKm.clear();
     _lapMaxAwayMeters = 0.0;
     _lastLapSeconds = 0;
+    _lapClosestSinceLeft = double.infinity;
+    _lapClosestPoint = null;
+    _lapClosestSeconds = 0;
+    _lapClosestDistanceKm = 0.0;
     _workoutStartedAt = DateTime.now();
+    // 화면이 꺼진 뒤에도 위치 콜백이 살아있으려면 알림 권한 + 배터리 최적화 예외가 필요
+    await BackgroundPermissions.ensureForBackgroundTracking();
     await _startGpsTracking();
     _startStepDetection();
     _launchTimer();
@@ -755,6 +813,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       ).listen((pos) {
         if (!mounted) return;
+        _lastGpsCallbackAt = DateTime.now();
         if (pos.accuracy > _gpsAccuracyThresholdMeters) {
           _gpsRejectStreak++;
           _gpsRejectedTotal++;
@@ -830,16 +889,56 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _mapCenter = smoothed;
           _hasLocation = true;
         });
-      });
-    } catch (_) {}
+      },
+        // 스트림이 에러/종료로 조용히 끊기면 그 뒤로는 거리가 한 걸음도 안 쌓이는데,
+        // 예전엔 핸들러가 없어 로그조차 남지 않았음 (케이던스 스트림에서 같은 문제를
+        // 2026-07-14에 겪음). 워치독이 곧바로 다시 걸도록 시각을 비워둔다.
+        onError: (Object e) {
+          FileLogger.instance.log('[GPS] 스트림 에러: $e');
+          _lastGpsCallbackAt = null;
+        },
+        onDone: () {
+          FileLogger.instance.log('[GPS] 스트림 종료됨(onDone)');
+          _lastGpsCallbackAt = null;
+        },
+        cancelOnError: false,
+      );
+      _lastGpsCallbackAt = DateTime.now();
+      _startGpsWatchdog();
+    } catch (e) {
+      FileLogger.instance.log('[GPS] 스트림 시작 실패: $e');
+    }
   }
 
-  // 시작 지점에서 _lapMinAwayMeters(40m) 이상 멀어졌다가 _lapReturnRadiusMeters(18m)
-  // 이내로 돌아오면 1바퀴. 시작 지점은 이번 운동의 첫 GPS 픽스로 고정(일시정지/재개에도 유지).
+  // 위치 콜백이 _gpsStaleSeconds 이상 끊기면 스트림을 다시 건다.
+  // (화면 꺼짐/백그라운드 억제로 콜백이 멎었을 때의 자동 복구 + 진단 기록)
+  void _startGpsWatchdog() {
+    _gpsWatchdogTimer?.cancel();
+    _gpsWatchdogTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      if (!mounted || _workoutState != WorkoutState.running) return;
+      final last = _lastGpsCallbackAt;
+      final staleSec = last == null
+          ? _gpsStaleSeconds
+          : DateTime.now().difference(last).inSeconds;
+      if (staleSec < _gpsStaleSeconds) return;
+      _gpsStreamRestarts++;
+      FileLogger.instance.log(
+        '[GPS] 워치독: ${staleSec}초째 위치 콜백 없음 → 스트림 재시작 '
+        '(누적 재시작=$_gpsStreamRestarts회)',
+      );
+      _lastGpsCallbackAt = DateTime.now(); // 재시작 직후 연쇄 재시작 방지
+      await _startGpsTracking();
+    });
+  }
+
+  // 바퀴 판정: 시작 지점에서 40m 이상 멀어졌다가(아웃존) 다시 돌아와 "가장 가까워진
+  // 지점(최근접점)을 지나 멀어지는" 순간을 1바퀴로 센다. 시작 지점은 이번 운동의 첫
+  // GPS 픽스로 고정(일시정지/재개에도 유지).
   //
-  // v17의 "방향전환(베어링) 확인" 게이트는 제거함 — 40m/18m + 60초 히스테리시스만으로도
-  // 중복 카운트가 막히는데, 저속 조깅에서는 베어링 자체가 잡음으로 튀어 오히려 실제 랩을
-  // 억제할 위험이 더 컸음. 랩이 계속 0으로 나오던 상황이라 "놓치지 않는 것"을 우선함.
+  // 고정 반경(18m) 방식이 아닌 이유는 위 _lapApproachMeters 주석 참고 — GPS 산포가
+  // 반경보다 커지는 순간 바퀴가 통째로 멈춰버리는 구조적 문제가 있었음.
+  // v17의 "방향전환(베어링) 확인" 게이트는 여전히 쓰지 않음(저속 조깅에서 베어링 잡음이
+  // 실제 랩을 억제할 위험이 더 컸음). 중복 방지는 60초 최소 랩 간격이 담당.
   void _checkLapCompletion(LatLng point) {
     _lapStartPoint ??= point;
     final distFromStart = Geolocator.distanceBetween(
@@ -847,43 +946,68 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       point.latitude, point.longitude,
     );
     if (distFromStart > _lapMaxAwayMeters) _lapMaxAwayMeters = distFromStart;
-    final sinceLastLap = _seconds - _lastLapSeconds;
 
-    if (distFromStart > _lapMinAwayMeters) {
-      if (!_hasLeftLapZone) {
+    // 1단계: 아직 시작점 근처라면, 충분히 멀어질 때까지 기다린다
+    if (!_hasLeftLapZone) {
+      if (distFromStart > _lapMinAwayMeters) {
+        _hasLeftLapZone = true;
+        _lapClosestSinceLeft = double.infinity;
         FileLogger.instance.log(
           '[LAP] 아웃존 진입 | 현재이격=${distFromStart.toStringAsFixed(1)}m '
-          '최대이격=${_lapMaxAwayMeters.toStringAsFixed(1)}m 경과=${sinceLastLap}s 판정=대기',
+          '최대이격=${_lapMaxAwayMeters.toStringAsFixed(1)}m '
+          '경과=${_seconds - _lastLapSeconds}s 판정=대기',
         );
       }
-      _hasLeftLapZone = true;
       return;
     }
 
-    if (_hasLeftLapZone && distFromStart <= _lapReturnRadiusMeters) {
-      if (sinceLastLap < _lapMinIntervalSeconds) {
-        FileLogger.instance.log(
-          '[LAP] 복귀 감지했으나 보류(최소 랩 간격 미달) | 현재이격=${distFromStart.toStringAsFixed(1)}m '
-          '최대이격=${_lapMaxAwayMeters.toStringAsFixed(1)}m 경과=${sinceLastLap}s '
-          '판정=보류(${_lapMinIntervalSeconds}s 필요)',
-        );
-        return;
-      }
-      _hasLeftLapZone = false;
-      _lastLapSeconds = _seconds;
-      FileLogger.instance.log(
-        '[LAP] 바퀴 완료 | 현재이격=${distFromStart.toStringAsFixed(1)}m '
-        '최대이격=${_lapMaxAwayMeters.toStringAsFixed(1)}m 경과=${sinceLastLap}s '
-        '판정=카운트(총 ${_lapCount + 1}바퀴)',
-      );
-      setState(() {
-        _lapCount++;
-        _lapCompletionPoints.add(point);
-        _lapSplitSeconds.add(_seconds);
-        _lapSplitDistanceKm.add(_distanceKm);
-      });
-      _lapMaxAwayMeters = 0.0;
+    // 2단계: 시작점 쪽으로 되돌아오는 중 — 가장 가까웠던 지점을 계속 갱신
+    if (distFromStart <= _lapApproachMeters && distFromStart < _lapClosestSinceLeft) {
+      _lapClosestSinceLeft = distFromStart;
+      _lapClosestPoint = point;
+      _lapClosestSeconds = _seconds;
+      _lapClosestDistanceKm = _distanceKm;
+      return;
     }
+
+    // 아직 한 번도 접근 범위 안에 못 들어왔으면 계속 대기
+    if (_lapClosestSinceLeft == double.infinity) return;
+    // 최근접점에서 확실히 멀어지기 전까지는 아직 통과로 보지 않음
+    if (distFromStart < _lapClosestSinceLeft + _lapDepartConfirmMeters) return;
+
+    // 3단계: 최근접점을 지나 다시 멀어짐 → 그 최근접 시점을 바퀴 완료로 기록
+    final sinceLastLap = _lapClosestSeconds - _lastLapSeconds;
+    if (sinceLastLap < _lapMinIntervalSeconds) {
+      FileLogger.instance.log(
+        '[LAP] 통과 감지했으나 보류(최소 랩 간격 미달) | '
+        '최근접=${_lapClosestSinceLeft.toStringAsFixed(1)}m '
+        '최대이격=${_lapMaxAwayMeters.toStringAsFixed(1)}m 경과=${sinceLastLap}s '
+        '판정=보류(${_lapMinIntervalSeconds}s 필요)',
+      );
+      _lapClosestSinceLeft = double.infinity; // 이번 접근은 버리고 다음 접근을 다시 노림
+      return;
+    }
+
+    FileLogger.instance.log(
+      '[LAP] 바퀴 완료 | 최근접=${_lapClosestSinceLeft.toStringAsFixed(1)}m '
+      '(현재이격=${distFromStart.toStringAsFixed(1)}m) '
+      '최대이격=${_lapMaxAwayMeters.toStringAsFixed(1)}m 경과=${sinceLastLap}s '
+      '판정=카운트(총 ${_lapCount + 1}바퀴)',
+    );
+    final lapPoint = _lapClosestPoint ?? point;
+    final lapSeconds = _lapClosestSeconds;
+    final lapDistanceKm = _lapClosestDistanceKm;
+    setState(() {
+      _lapCount++;
+      _lapCompletionPoints.add(lapPoint);
+      _lapSplitSeconds.add(lapSeconds);
+      _lapSplitDistanceKm.add(lapDistanceKm);
+    });
+    _lastLapSeconds = lapSeconds;
+    _lapMaxAwayMeters = distFromStart;
+    _lapClosestSinceLeft = double.infinity;
+    // 이미 시작점에서 멀어지는 중이므로, 아웃존 판정을 다시 거치게 두면 된다
+    _hasLeftLapZone = distFromStart > _lapMinAwayMeters;
   }
 
   void _announceWorkoutStart() {
@@ -899,6 +1023,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _workoutTimer = null;
     _positionSub?.cancel();
     _positionSub = null;
+    _gpsWatchdogTimer?.cancel();
+    _gpsWatchdogTimer = null;
     _accelSub?.cancel();
     _accelSub = null;
     _cadenceDiagnosticTimer?.cancel();
@@ -930,6 +1056,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _workoutTimer = null;
     _positionSub?.cancel();
     _positionSub = null;
+    _gpsWatchdogTimer?.cancel();
+    _gpsWatchdogTimer = null;
     _accelSub?.cancel();
     _accelSub = null;
     _cadenceDiagnosticTimer?.cancel();

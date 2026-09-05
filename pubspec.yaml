@@ -2,7 +2,7 @@ name: snail_running
 description: "A custom slow jogging app for Hong Jeong-pyo"
 publish_to: 'none'
 
-version: 1.0.5+24
+version: 1.0.6+25
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -22,6 +22,9 @@ dependencies:
   # 웹 빌드에서는 location_settings_web.dart로 조건부 분기되어 참조되지 않음
   geolocator_android: ^4.5.0
   wakelock_plus: ^1.1.4
+  # 알림 권한(Android 13+)과 배터리 최적화 예외 요청용 — 화면이 꺼진 뒤에도 위치
+  # 콜백이 유지되려면 "항상 허용" 위치 권한만으로는 부족함 (v25에서 추가)
+  permission_handler: ^11.3.1
   flutter_map: ^6.1.0
   latlong2: ^0.9.0
   sensors_plus: ^4.0.2

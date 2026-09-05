@@ -14,6 +14,9 @@ LocationSettings buildTrackingLocationSettings({
     return AndroidSettings(
       accuracy: accuracy,
       distanceFilter: distanceFilter,
+      // 갱신 주기를 명시하지 않으면 플러그인 기본값에 맡겨지는데, 화면이 꺼진 뒤
+      // OS가 알아서 간격을 늘려버리는 여지를 준다. 1초로 못 박아 요청한다.
+      intervalDuration: const Duration(seconds: 1),
       foregroundNotificationConfig: const ForegroundNotificationConfig(
         notificationTitle: '달팽이 러닝',
         notificationText: '러닝 기록 중',

@@ -464,7 +464,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           Slider(
-            value: _s.metronomeVolume.clamp(0.0, 1.0),
+            value: _s.metronomeVolume.clamp(kMinMetronomeVolume, 1.0),
+            // 0까지 내려가면 "켜져 있는데 무음"인 함정 상태가 되므로 하한을 둠
+            min: kMinMetronomeVolume,
+            max: 1.0,
             activeColor: _accent,
             onChanged: (v) => _update(() => _s.metronomeVolume = v),
           ),
