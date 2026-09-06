@@ -74,7 +74,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   StreamSubscription<Position>? _positionSub;
   LatLng? _lastGpsPoint; // 마지막으로 거리 누적에 반영된 지점 (원시 좌표)
   DateTime? _lastGpsTime;
-  static const int _gpsAccuracyThresholdMeters = 35; // 이보다 부정확한 측위는 거리 누적에서 제외
+  // ── 정확도 등급 (2026-09-06 실측 로그로 전면 재설계) ───────────────────────
+  // 9/6 로그에서 확정된 사실: 화면이 꺼져도 위치 콜백은 초당 1회로 멀쩡히 들어온다.
+  // 대신 정확도가 3m → 6 → 15 → 30 → 40 → 116m로 계단식으로 나빠지는데(OS가 화면
+  // 꺼짐 상태에서 GNSS 듀티를 낮추고 저전력 측위로 내려감), 예전 코드는 35m를 넘는
+  // 순간부터 **모든 포인트를 통째로 버려서** 거리와 바퀴가 그대로 얼어붙었다.
+  // 즉 OS가 위치를 끊은 게 아니라 우리 필터가 스스로 버리고 있었던 것.
+  //   - 화면 끔 5분 구간: 실제 약 460m를 달렸는데 292m만 누적 (168m 유실)
+  //   - 화면 끔 3분 구간: 실제 약 290m인데 33m만 누적 (257m 유실)
+  // 그래서 "정밀 / 저정밀 / 폐기" 3단계로 나눠, 저정밀 구간도 버리지 않고
+  // 더 긴 간격으로 묶어서 누적한다(잡음이 거리로 부풀지 않는 선에서).
+  static const int _gpsAccuracyThresholdMeters = 35; // 이보다 좋으면 매 콜백 누적
+  static const double _gpsDegradedAccuracyMeters = 100; // 35~100m는 저정밀 모드로 누적
+  // 저정밀 구간에서는 1초짜리 이동(약 1.7m)이 측위 잡음에 완전히 묻히므로,
+  // 이 정도 시간·거리가 쌓였을 때만 직선거리로 한 번에 반영한다.
+  // (실제 주행 경로보다 약간 짧게 잡히지만, 통째로 버려서 0이 되는 것보다 훨씬 정확)
+  static const double _degradedMinIntervalSec = 12.0;
+  static const double _degradedMinMeters = 10.0;
+  // 바퀴 판정은 40m 아웃존/8m 통과확인을 쓰므로 측위 잡음에 더 민감함 —
+  // 이보다 부정확한 포인트는 거리에는 쓰되 바퀴 판정에는 넣지 않는다
+  static const double _lapMaxAccuracyMeters = 50;
   static const double _maxPlausibleSpeedKmh = 25.0; // 이보다 빠른 순간 속도는 GPS 튐으로 간주 (아래 "캡" 참고)
   // 연속으로 정확도 기준을 못 넘는 상태가 몇 초나 지속되는지 진단하기 위한 카운터
   int _gpsRejectStreak = 0;
@@ -91,9 +110,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 실제 주행 경로만큼의 거리가 통째로 사라졌음. 콜백이 일정 시간 이상 없으면
   // 스트림을 다시 걸어 복구를 시도하고, 그 사실을 로그에 남긴다.
   DateTime? _lastGpsCallbackAt;
+  // 콜백은 들어오는데 전부 버려지는 상황(9/6에 실제로 발생)을 구분하려면 "마지막으로
+  // 실제 채택한 측위" 시각을 따로 봐야 함 — 워치독은 이쪽을 기준으로 판단한다
+  DateTime? _lastAcceptedGpsAt;
+  bool _inDegradedGpsMode = false;
   Timer? _gpsWatchdogTimer;
   int _gpsStreamRestarts = 0;
-  static const int _gpsStaleSeconds = 25;
+  static const int _gpsStaleSeconds = 45;
   // 콜백 간격이 이보다 짧으면 순간속도 계산을 건너뜀 — distanceFilter가 촘촘해서(1m)
   // 아주 짧은 시간차에 콜백이 몰릴 때는 정상적인 GPS 잡음(2~5m)만으로도 순간속도가
   // 크게 튀어 오탐하기 쉬움
@@ -663,6 +686,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _gpsRejectStreakStart = null;
     _gpsRejectedTotal = 0;
     _gpsAcceptedTotal = 0;
+    _lastAcceptedGpsAt = null;
+    _inDegradedGpsMode = false;
     _lapStartPoint = null;
     _lapCount = 0;
     _hasLeftLapZone = false;
@@ -814,7 +839,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ).listen((pos) {
         if (!mounted) return;
         _lastGpsCallbackAt = DateTime.now();
-        if (pos.accuracy > _gpsAccuracyThresholdMeters) {
+        // 100m를 넘는 측위만 진짜로 버린다 (그 아래는 저정밀이라도 살려 쓴다)
+        if (pos.accuracy > _gpsDegradedAccuracyMeters) {
           _gpsRejectStreak++;
           _gpsRejectedTotal++;
           _gpsRejectStreakStart ??= DateTime.now();
@@ -831,6 +857,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _gpsRejectStreakStart = null;
         _lastGpsAccuracyMeters = pos.accuracy;
         _gpsAcceptedTotal++;
+        _lastAcceptedGpsAt = DateTime.now();
+        // 정확도가 기준을 못 넘으면 "저정밀 모드" — 버리지 않고 더 긴 간격으로 묶어 누적
+        final degraded = pos.accuracy > _gpsAccuracyThresholdMeters;
+        if (degraded != _inDegradedGpsMode) {
+          _inDegradedGpsMode = degraded;
+          FileLogger.instance.log(
+            '[GPS] ${degraded ? "저정밀 모드 진입" : "정밀 모드 복귀"} '
+            '(acc=${pos.accuracy.toStringAsFixed(1)}m)',
+          );
+        }
 
         final rawPoint = LatLng(pos.latitude, pos.longitude);
         final now = pos.timestamp;
@@ -839,11 +875,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // 짧게 잡히게 하는 효과가 거리 수치에 섞이지 않도록 함
         final smoothed = _applyEma(rawPoint);
         _emaPoint = smoothed;
-        _checkLapCompletion(smoothed);
+        // 바퀴 판정은 잡음에 민감해서 어느 정도 정확한 포인트만 넣는다
+        if (pos.accuracy <= _lapMaxAccuracyMeters) _checkLapCompletion(smoothed);
 
         if (_lastGpsPoint != null && _lastGpsTime != null) {
           final elapsedSec = now.difference(_lastGpsTime!).inMilliseconds / 1000.0;
-          if (elapsedSec < _minGpsIntervalSec) {
+          // 저정밀 구간: 매 콜백마다 누적하면 측위 잡음이 그대로 거리로 부풀어 오르므로,
+          // 충분한 시간과 이동거리가 쌓일 때까지 기준점을 유지했다가 한 번에 반영
+          if (degraded) {
+            final movedSoFar = Geolocator.distanceBetween(
+              _lastGpsPoint!.latitude, _lastGpsPoint!.longitude,
+              rawPoint.latitude, rawPoint.longitude,
+            );
+            if (elapsedSec < _degradedMinIntervalSec || movedSoFar < _degradedMinMeters) {
+              setState(() {
+                _mapCenter = smoothed;
+                _hasLocation = true;
+              });
+              return;
+            }
+          }
+          if (!degraded && elapsedSec < _minGpsIntervalSec) {
             // 콜백 간격이 너무 짧으면 순간속도가 잡음만으로 튈 수 있으니 위치 표시만 갱신하고
             // 거리 누적은 다음 콜백(충분한 시간차가 쌓였을 때)으로 미룸
             setState(() {
@@ -867,7 +919,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ? (_maxPlausibleSpeedKmh / 3.6) * elapsedSec
               : meters;
           FileLogger.instance.log(
-            '[GPS] acc=${pos.accuracy.toStringAsFixed(1)}m '
+            '[GPS]${degraded ? "(저정밀)" : ""} acc=${pos.accuracy.toStringAsFixed(1)}m '
             'speed=${speedKmh.toStringAsFixed(1)}km/h '
             '${speedKmh > _maxPlausibleSpeedKmh ? "capped ${meters.toStringAsFixed(1)}m->${cappedMeters.toStringAsFixed(1)}m" : "meters=${meters.toStringAsFixed(1)}m"} '
             '누적거리=${_distanceKm.toStringAsFixed(3)}km 수락=$_gpsAcceptedTotal개 거부=$_gpsRejectedTotal개',
@@ -916,17 +968,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _gpsWatchdogTimer?.cancel();
     _gpsWatchdogTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       if (!mounted || _workoutState != WorkoutState.running) return;
-      final last = _lastGpsCallbackAt;
-      final staleSec = last == null
+      // "콜백이 아예 없다"와 "콜백은 오는데 전부 버려진다"를 구분해서 기록
+      final lastAccepted = _lastAcceptedGpsAt;
+      final lastCallback = _lastGpsCallbackAt;
+      final staleSec = lastAccepted == null
           ? _gpsStaleSeconds
-          : DateTime.now().difference(last).inSeconds;
+          : DateTime.now().difference(lastAccepted).inSeconds;
       if (staleSec < _gpsStaleSeconds) return;
+      final callbackSilentSec = lastCallback == null
+          ? -1
+          : DateTime.now().difference(lastCallback).inSeconds;
       _gpsStreamRestarts++;
       FileLogger.instance.log(
-        '[GPS] 워치독: ${staleSec}초째 위치 콜백 없음 → 스트림 재시작 '
-        '(누적 재시작=$_gpsStreamRestarts회)',
+        '[GPS] 워치독: ${staleSec}초째 쓸만한 측위 없음 '
+        '(마지막 콜백은 ${callbackSilentSec}초 전 = ${callbackSilentSec < 5 ? "콜백은 오는데 정확도 미달" : "콜백 자체가 끊김"}) '
+        '→ 스트림 재시작 (누적 재시작=$_gpsStreamRestarts회)',
       );
-      _lastGpsCallbackAt = DateTime.now(); // 재시작 직후 연쇄 재시작 방지
+      _lastAcceptedGpsAt = DateTime.now(); // 재시작 직후 연쇄 재시작 방지
+      _lastGpsCallbackAt = DateTime.now();
       await _startGpsTracking();
     });
   }
