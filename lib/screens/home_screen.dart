@@ -91,9 +91,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // (실제 주행 경로보다 약간 짧게 잡히지만, 통째로 버려서 0이 되는 것보다 훨씬 정확)
   static const double _degradedMinIntervalSec = 12.0;
   static const double _degradedMinMeters = 10.0;
-  // 바퀴 판정은 40m 아웃존/8m 통과확인을 쓰므로 측위 잡음에 더 민감함 —
-  // 이보다 부정확한 포인트는 거리에는 쓰되 바퀴 판정에는 넣지 않는다
-  static const double _lapMaxAccuracyMeters = 50;
+  // 저정밀 구간에서 허용할 속도 배수 — 최근 정밀 구간 실측 속도의 이 배를 넘는
+  // 이동은 잡음으로 보고 잘라낸다 (9/7 실측에서 17~24km/h짜리 잡음 세그먼트가
+  // 거리를 48% 부풀렸음. 25km/h 고정 상한은 슬로우 조깅에 너무 헐거웠음)
+  static const double _degradedSpeedTolerance = 1.5;
+  // 최근 정밀 구간에서 측정된 이동 속도(m/s). 실측 전 기본값은 슬로우 조깅 기준 7.2km/h
+  double _recentSpeedMps = 2.0;
   static const double _maxPlausibleSpeedKmh = 25.0; // 이보다 빠른 순간 속도는 GPS 튐으로 간주 (아래 "캡" 참고)
   // 연속으로 정확도 기준을 못 넘는 상태가 몇 초나 지속되는지 진단하기 위한 카운터
   int _gpsRejectStreak = 0;
@@ -688,6 +691,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _gpsAcceptedTotal = 0;
     _lastAcceptedGpsAt = null;
     _inDegradedGpsMode = false;
+    _recentSpeedMps = 2.0;
     _lapStartPoint = null;
     _lapCount = 0;
     _hasLeftLapZone = false;
@@ -875,8 +879,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // 짧게 잡히게 하는 효과가 거리 수치에 섞이지 않도록 함
         final smoothed = _applyEma(rawPoint);
         _emaPoint = smoothed;
-        // 바퀴 판정은 잡음에 민감해서 어느 정도 정확한 포인트만 넣는다
-        if (pos.accuracy <= _lapMaxAccuracyMeters) _checkLapCompletion(smoothed);
+        // 바퀴 판정: 정확도가 나쁜 포인트를 "버리면" 저정밀 구간에서 바퀴가 통째로
+        // 안 잡힌다(9/7 실측: 화면 끄면 거리는 쌓이는데 바퀴만 멈춤). 버리는 대신
+        // 판정 반경을 그 시점 측위 오차만큼 넓혀서 같이 판단한다.
+        _checkLapCompletion(
+          smoothed,
+          approachMeters: math.max(_lapApproachMeters, pos.accuracy),
+          departMeters: math.max(_lapDepartConfirmMeters, pos.accuracy * 0.25),
+        );
 
         if (_lastGpsPoint != null && _lastGpsTime != null) {
           final elapsedSec = now.difference(_lastGpsTime!).inMilliseconds / 1000.0;
@@ -915,13 +925,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           //  옛 기준점→새 지점을 직선으로 건너뛰어 버렸음. 트랙처럼 계속 곡선을 도는
           //  코스에서는 이 직선이 실제 호 경로보다 훨씬 짧아서 바퀴를 돌수록 오차가
           //  누적되는 원인이었음 — 기준점은 항상 갱신해 이 "코너 지름길" 자체를 없앰)
-          final cappedMeters = speedKmh > _maxPlausibleSpeedKmh
+          var cappedMeters = speedKmh > _maxPlausibleSpeedKmh
               ? (_maxPlausibleSpeedKmh / 3.6) * elapsedSec
               : meters;
+          // ── 저정밀 구간은 "최근 실제 속도"로 한 번 더 조인다 (2026-09-07) ───────
+          // 9/7 실측: 저정밀 구간 세그먼트가 17~24km/h로 찍혀 거리가 48% 부풀었음
+          // (정상 구간 296m/랩 → 저정밀 포함 438m/랩). 슬로우 조깅 실제 속도는 6~8km/h라
+          // 이건 달린 게 아니라 측위 잡음이 그대로 거리로 들어간 것. 25km/h 상한은
+          // 잡음을 거르기에 너무 헐거웠음 → 최근 정밀 구간에서 측정된 속도의 1.5배를
+          // 넘지 못하게 한다(멈춰 있으면 짧은 값이 그대로 쓰이므로 과소 위험은 없음).
+          if (degraded) {
+            final plausible = _recentSpeedMps * _degradedSpeedTolerance * elapsedSec;
+            if (cappedMeters > plausible) cappedMeters = plausible;
+          } else {
+            // 정밀 구간의 속도만 최근 속도 추정에 반영 (EMA)
+            final mps = meters / elapsedSec;
+            if (mps > 0.3 && mps < _maxPlausibleSpeedKmh / 3.6) {
+              _recentSpeedMps += 0.2 * (mps - _recentSpeedMps);
+            }
+          }
           FileLogger.instance.log(
             '[GPS]${degraded ? "(저정밀)" : ""} acc=${pos.accuracy.toStringAsFixed(1)}m '
             'speed=${speedKmh.toStringAsFixed(1)}km/h '
-            '${speedKmh > _maxPlausibleSpeedKmh ? "capped ${meters.toStringAsFixed(1)}m->${cappedMeters.toStringAsFixed(1)}m" : "meters=${meters.toStringAsFixed(1)}m"} '
+            '${cappedMeters < meters - 0.05 ? "capped ${meters.toStringAsFixed(1)}m->${cappedMeters.toStringAsFixed(1)}m" : "meters=${meters.toStringAsFixed(1)}m"} '
+            '${degraded ? "기준속도=${(_recentSpeedMps * 3.6).toStringAsFixed(1)}km/h " : ""}'
             '누적거리=${_distanceKm.toStringAsFixed(3)}km 수락=$_gpsAcceptedTotal개 거부=$_gpsRejectedTotal개',
           );
 
@@ -998,7 +1025,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 반경보다 커지는 순간 바퀴가 통째로 멈춰버리는 구조적 문제가 있었음.
   // v17의 "방향전환(베어링) 확인" 게이트는 여전히 쓰지 않음(저속 조깅에서 베어링 잡음이
   // 실제 랩을 억제할 위험이 더 컸음). 중복 방지는 60초 최소 랩 간격이 담당.
-  void _checkLapCompletion(LatLng point) {
+  void _checkLapCompletion(
+    LatLng point, {
+    required double approachMeters,
+    required double departMeters,
+  }) {
     _lapStartPoint ??= point;
     final distFromStart = Geolocator.distanceBetween(
       _lapStartPoint!.latitude, _lapStartPoint!.longitude,
@@ -1021,7 +1052,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     // 2단계: 시작점 쪽으로 되돌아오는 중 — 가장 가까웠던 지점을 계속 갱신
-    if (distFromStart <= _lapApproachMeters && distFromStart < _lapClosestSinceLeft) {
+    if (distFromStart <= approachMeters && distFromStart < _lapClosestSinceLeft) {
       _lapClosestSinceLeft = distFromStart;
       _lapClosestPoint = point;
       _lapClosestSeconds = _seconds;
@@ -1032,7 +1063,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // 아직 한 번도 접근 범위 안에 못 들어왔으면 계속 대기
     if (_lapClosestSinceLeft == double.infinity) return;
     // 최근접점에서 확실히 멀어지기 전까지는 아직 통과로 보지 않음
-    if (distFromStart < _lapClosestSinceLeft + _lapDepartConfirmMeters) return;
+    if (distFromStart < _lapClosestSinceLeft + departMeters) return;
 
     // 3단계: 최근접점을 지나 다시 멀어짐 → 그 최근접 시점을 바퀴 완료로 기록
     final sinceLastLap = _lapClosestSeconds - _lastLapSeconds;
