@@ -28,6 +28,11 @@ class AppSettings {
   bool metronomeEnabled;
   // 메트로놈 음량 0.0~1.0 (설정 화면 슬라이더는 0~100%로 표시)
   double metronomeVolume;
+  // 통화 중에도 메트로놈이 들리게 할지. true면 알림음 계열 스트림으로 재생해
+  // 통화 중에도 시스템이 막지 않지만, 미디어 볼륨이 아니라 알림 볼륨을 탄다
+  // (2026-07-03에 이 경로를 쓰다가 "알림 볼륨이 0이라 아예 안 들린다"는 문제로
+  //  미디어 경로로 바꿨던 이력이 있어 기본값은 false)
+  bool metronomeDuringCall;
   double weightKg;
   // 러닝 중 화면이 꺼지면 OS가 위치/센서 콜백을 억제해 거리가 유실되므로 기본 ON
   bool keepScreenOn;
@@ -44,6 +49,7 @@ class AppSettings {
     this.mixWithOtherAudio = true,
     this.metronomeEnabled = true,
     this.metronomeVolume = 1.0,
+    this.metronomeDuringCall = false,
     this.weightKg = 70.0,
     this.keepScreenOn = true,
     ThemePreset? preset,
@@ -62,6 +68,7 @@ class AppSettings {
   static const _kMixWithOtherAudio = 'mixWithOtherAudio';
   static const _kMetronomeEnabled = 'metronomeEnabled';
   static const _kMetronomeVolume = 'metronomeVolume';
+  static const _kMetronomeDuringCall = 'metronomeDuringCall';
   static const _kWeightKg = 'weightKg';
   static const _kPresetName = 'presetName';
   static const _kKeepScreenOn = 'keepScreenOn';
@@ -84,6 +91,7 @@ class AppSettings {
     // 예전 버전에서 0으로 저장된 값이 남아 있어도 하한으로 끌어올림
     metronomeVolume =
         (prefs.getDouble(_kMetronomeVolume) ?? metronomeVolume).clamp(kMinMetronomeVolume, 1.0);
+    metronomeDuringCall = prefs.getBool(_kMetronomeDuringCall) ?? metronomeDuringCall;
     weightKg = prefs.getDouble(_kWeightKg) ?? weightKg;
     keepScreenOn = prefs.getBool(_kKeepScreenOn) ?? keepScreenOn;
     final presetName = prefs.getString(_kPresetName);
@@ -111,6 +119,7 @@ class AppSettings {
     await prefs.setBool(_kMixWithOtherAudio, mixWithOtherAudio);
     await prefs.setBool(_kMetronomeEnabled, metronomeEnabled);
     await prefs.setDouble(_kMetronomeVolume, metronomeVolume);
+    await prefs.setBool(_kMetronomeDuringCall, metronomeDuringCall);
     await prefs.setDouble(_kWeightKg, weightKg);
     await prefs.setBool(_kKeepScreenOn, keepScreenOn);
     await prefs.setString(_kPresetName, preset.name);

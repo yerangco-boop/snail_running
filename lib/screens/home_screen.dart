@@ -250,6 +250,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   //  변경을 알 수 없음 — 마지막으로 "적용한" 값을 State에 따로 들고 비교해야 함)
   int? _appliedBpm;
   bool? _appliedMetronomeEnabled;
+  bool? _appliedDuringCall;
 
   // ── 날씨 ─────────────────────────────────────────────────────────────────
   final WeatherService _weatherService = WeatherService();
@@ -315,9 +316,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _appliedMetronomeVolume = _s.metronomeVolume;
     _appliedBpm = _s.bpm;
     _appliedMetronomeEnabled = _s.metronomeEnabled;
+    _appliedDuringCall = _s.metronomeDuringCall;
     _metronome.init(
       mixWithOtherAudio: _s.mixWithOtherAudio,
       volume: _s.metronomeVolume,
+      audibleDuringCall: _s.metronomeDuringCall,
     );
     // 비정상 종료로 남은 러닝 스냅샷이 있으면 복구 여부를 물어봄
     WidgetsBinding.instance.addPostFrameCallback((_) => _offerCrashRecovery());
@@ -354,11 +357,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _appliedMixSetting = _s.mixWithOtherAudio;
     _appliedMetronomeVolume = _s.metronomeVolume;
     _appliedBpm = _s.bpm;
+    _appliedDuringCall = _s.metronomeDuringCall;
     try {
       _metronome.stop();
       await _metronome.init(
         mixWithOtherAudio: _s.mixWithOtherAudio,
         volume: _s.metronomeVolume,
+        audibleDuringCall: _s.metronomeDuringCall,
       );
       if (_workoutState == WorkoutState.running && _s.metronomeEnabled) {
         await _metronome.start(_s.bpm);
@@ -375,7 +380,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_appliedTtsVoiceName != _s.ttsVoiceName) {
       _applyTtsVoice();
     }
-    if (_appliedMixSetting != _s.mixWithOtherAudio) {
+    // 통화 중 재생 스위치는 오디오 스트림 종류 자체를 바꾸므로 재초기화가 필요함.
+    // 통화 중에 스위치를 켜도 그 자리에서 반영되도록 mix 설정과 같은 경로로 처리
+    if (_appliedMixSetting != _s.mixWithOtherAudio ||
+        _appliedDuringCall != _s.metronomeDuringCall) {
       // init은 플레이어를 새로 만들면서 박자를 멈추므로, 러닝 중이면 다시 시작까지
       // 해주는 _restartMetronome을 거쳐야 한다
       _restartMetronome();

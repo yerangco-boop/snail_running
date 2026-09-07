@@ -10,9 +10,17 @@ class MetronomeService {
 
   // init은 플레이어 인스턴스를 새로 만드는 무거운 작업이라, 진행 중인 박자 타이머가
   // 폐기된 플레이어를 건드리지 않도록 먼저 멈춘다
-  Future<void> init({bool mixWithOtherAudio = true, double volume = 1.0}) async {
+  Future<void> init({
+    bool mixWithOtherAudio = true,
+    double volume = 1.0,
+    bool audibleDuringCall = false,
+  }) async {
     stop();
-    await _click.init(mixWithOtherAudio: mixWithOtherAudio, volume: volume);
+    await _click.init(
+      mixWithOtherAudio: mixWithOtherAudio,
+      volume: volume,
+      audibleDuringCall: audibleDuringCall,
+    );
   }
 
   Future<void> setVolume(double volume) => _click.setVolume(volume);

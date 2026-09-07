@@ -6,9 +6,13 @@ class ClickPlayer {
   js.JsObject? _ctx;
   double _volume = 1.0;
 
-  // 웹 Audio API는 네이티브 AudioFocus 개념이 없어 mixWithOtherAudio는 무시됨
-  // (인터페이스를 click_player_stub.dart와 맞추기 위한 매개변수)
-  Future<void> init({bool mixWithOtherAudio = true, double volume = 1.0}) async {
+  // 웹 Audio API는 네이티브 AudioFocus/스트림 종류 개념이 없어 mixWithOtherAudio와
+  // audibleDuringCall은 무시됨 (인터페이스를 click_player_stub.dart와 맞추기 위한 매개변수)
+  Future<void> init({
+    bool mixWithOtherAudio = true,
+    double volume = 1.0,
+    bool audibleDuringCall = false,
+  }) async {
     _volume = volume.clamp(0.0, 1.0);
     try {
       final ctor = js.context['AudioContext'] ?? js.context['webkitAudioContext'];

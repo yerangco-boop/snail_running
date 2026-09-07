@@ -386,6 +386,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (v) => _update(() => _s.mixWithOtherAudio = v),
               ),
             ),
+            const SizedBox(height: 8),
+
+            _buildDuringCallCard(),
 
             const SizedBox(height: 28),
 
@@ -480,6 +483,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Text('맞추기',
                   style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
             ),
+        ],
+      ),
+    );
+  }
+
+  // 통화 중에도 메트로놈이 들리게 할지 고르는 스위치.
+  // 안드로이드는 미디어 계열 소리를 통화 중에 막기 때문에, 통화 중에도 들으려면
+  // 알림음 계열 스트림으로 내보내야 한다. 대신 그 스트림은 미디어 볼륨이 아니라
+  // 알림 볼륨을 타므로, 알림 볼륨이 낮으면 평소에도 작게 들릴 수 있음을 함께 안내.
+  Widget _buildDuringCallCard() {
+    final on = _s.metronomeDuringCall;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 6, 12, 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: _s.preset.cardGradient,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _s.preset.cardBorder),
+        boxShadow: _s.preset.cardShadow,
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.phone_in_talk_outlined, color: _accent, size: 22),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text("통화 중에도 메트로놈 재생",
+                    style: TextStyle(fontSize: 16, color: _s.preset.onBackground)),
+              ),
+              Switch(
+                value: on,
+                activeThumbColor: _accent,
+                onChanged: (v) => _update(() => _s.metronomeDuringCall = v),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 38, right: 8, bottom: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                on
+                    ? '알림음 스트림으로 재생됩니다. 소리가 작으면 미디어 볼륨이 아니라 '
+                        '휴대폰의 알림 볼륨을 올려주세요.'
+                    : '통화 중에는 안드로이드가 미디어 소리를 막아 메트로놈이 들리지 않습니다.',
+                style: TextStyle(fontSize: 12, color: _s.preset.grey, height: 1.35),
+              ),
+            ),
+          ),
         ],
       ),
     );

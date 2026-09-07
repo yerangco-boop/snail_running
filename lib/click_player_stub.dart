@@ -6,7 +6,11 @@ class ClickPlayer {
   AudioPlayer _player = AudioPlayer();
   double _volume = 1.0;
 
-  Future<void> init({bool mixWithOtherAudio = true, double volume = 1.0}) async {
+  Future<void> init({
+    bool mixWithOtherAudio = true,
+    double volume = 1.0,
+    bool audibleDuringCall = false,
+  }) async {
     _volume = volume.clamp(0.0, 1.0);
     // ★ 반드시 플레이어 인스턴스를 새로 만들 것 (2026-09-05).
     // 전화가 오면 시스템이 이 앱의 SoundPool 스트림을 회수하는데, 우리는
@@ -35,8 +39,18 @@ class ClickPlayer {
         audioFocus: mixWithOtherAudio
             ? AndroidAudioFocus.none
             : AndroidAudioFocus.gain,
-        contentType: AndroidContentType.music,
-        usageType: AndroidUsageType.media,
+        // ── 출력 스트림 선택 (2026-09-07) ──────────────────────────────────
+        // media 계열은 통화 중 시스템이 막지만 미디어 볼륨으로 제어돼 확실히 들리고,
+        // sonification(알림음) 계열은 통화 중에도 안 막히지만 별도의 알림 볼륨을 탄다.
+        // 2026-07-03에 "실기기에서 메트로놈이 아예 안 들린다"는 문제를 고치려고
+        // sonification → media로 바꿨는데, 그 부작용이 "통화 중 무음"이었음.
+        // 어느 쪽이 맞는지는 사용 상황에 달려 있어 설정 스위치로 고르게 함.
+        contentType: audibleDuringCall
+            ? AndroidContentType.sonification
+            : AndroidContentType.music,
+        usageType: audibleDuringCall
+            ? AndroidUsageType.assistanceSonification
+            : AndroidUsageType.media,
         isSpeakerphoneOn: false,
         stayAwake: false,
       ),
@@ -46,7 +60,8 @@ class ClickPlayer {
     // leftVolume/rightVolume에 매핑됨 — 설정 화면 슬라이더 값이 여기로 전달됨
     await _player.setVolume(_volume);
     await _player.setSource(AssetSource('sounds/click.wav'));
-    debugPrint('[Metro] native ClickPlayer init done, volume=$_volume state=${_player.state}');
+    debugPrint('[Metro] native ClickPlayer init done, volume=$_volume '
+        'stream=${audibleDuringCall ? "알림음(통화중 재생)" : "미디어"} state=${_player.state}');
   }
 
   // 러닝 중 슬라이더를 움직여도 재초기화 없이 즉시 반영되도록 별도 노출
