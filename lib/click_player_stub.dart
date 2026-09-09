@@ -39,17 +39,22 @@ class ClickPlayer {
         audioFocus: mixWithOtherAudio
             ? AndroidAudioFocus.none
             : AndroidAudioFocus.gain,
-        // ── 출력 스트림 선택 (2026-09-07) ──────────────────────────────────
-        // media 계열은 통화 중 시스템이 막지만 미디어 볼륨으로 제어돼 확실히 들리고,
-        // sonification(알림음) 계열은 통화 중에도 안 막히지만 별도의 알림 볼륨을 탄다.
+        // ── 출력 스트림 선택 (2026-09-07 도입, 2026-09-09 수정) ──────────────
+        // media 계열은 통화 중 시스템이 막지만 미디어 볼륨으로 제어돼 확실히 들림.
         // 2026-07-03에 "실기기에서 메트로놈이 아예 안 들린다"는 문제를 고치려고
         // sonification → media로 바꿨는데, 그 부작용이 "통화 중 무음"이었음.
-        // 어느 쪽이 맞는지는 사용 상황에 달려 있어 설정 스위치로 고르게 함.
+        //
+        // v29에서 통화용 경로를 assistanceSonification(알림음)으로 뒀는데, 9/9 실측에서
+        // **켜면 오히려 아무 소리도 안 나는** 문제가 확인됨 — 이 스트림이 타는
+        // 알림/시스템 볼륨이 이 기기에서 사실상 꺼져 있는 것으로 보임(7월의 그 버그와
+        // 같은 원인). → 통화 중에도 막히지 않으면서 볼륨이 꺼져 있을 확률이 훨씬 낮은
+        // **알람 스트림**으로 교체. 알람은 통화 중에도 울리도록 설계된 채널이고,
+        // 알람 볼륨은 사용자가 0으로 두는 경우가 드묾.
         contentType: audibleDuringCall
             ? AndroidContentType.sonification
             : AndroidContentType.music,
         usageType: audibleDuringCall
-            ? AndroidUsageType.assistanceSonification
+            ? AndroidUsageType.alarm
             : AndroidUsageType.media,
         isSpeakerphoneOn: false,
         stayAwake: false,
@@ -61,7 +66,7 @@ class ClickPlayer {
     await _player.setVolume(_volume);
     await _player.setSource(AssetSource('sounds/click.wav'));
     debugPrint('[Metro] native ClickPlayer init done, volume=$_volume '
-        'stream=${audibleDuringCall ? "알림음(통화중 재생)" : "미디어"} state=${_player.state}');
+        'stream=${audibleDuringCall ? "알람(통화중 재생)" : "미디어"} state=${_player.state}');
   }
 
   // 러닝 중 슬라이더를 움직여도 재초기화 없이 즉시 반영되도록 별도 노출

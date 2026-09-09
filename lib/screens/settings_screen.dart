@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../models/app_settings.dart';
 import '../services/database_service.dart';
 import '../services/file_logger.dart';
+import '../services/metronome_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   final AppSettings settings;
@@ -524,21 +525,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           Padding(
-            padding: const EdgeInsets.only(left: 38, right: 8, bottom: 4),
+            padding: const EdgeInsets.only(left: 38, right: 8),
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 on
-                    ? '알림음 스트림으로 재생됩니다. 소리가 작으면 미디어 볼륨이 아니라 '
-                        '휴대폰의 알림 볼륨을 올려주세요.'
+                    ? '알람 스트림으로 재생됩니다. 소리가 안 나면 미디어 볼륨이 아니라 '
+                        '휴대폰의 알람 볼륨을 올려주세요.'
                     : '통화 중에는 안드로이드가 미디어 소리를 막아 메트로놈이 들리지 않습니다.',
                 style: TextStyle(fontSize: 12, color: _s.preset.grey, height: 1.35),
               ),
             ),
           ),
+          // 지금 이 설정으로 실제 소리가 나는지 그 자리에서 확인 — 러닝을 시작하거나
+          // 통화가 걸려올 때까지 기다리지 않아도 되게 함 (9/9에 스위치를 켰는데
+          // 오히려 무음이 되는 문제를 러닝 중에야 발견했음)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _testingMetronome ? null : _testMetronomeSound,
+              icon: Icon(
+                _testingMetronome ? Icons.graphic_eq : Icons.play_circle_outline,
+                size: 18,
+                color: _accent,
+              ),
+              label: Text(_testingMetronome ? '재생 중…' : '소리 테스트',
+                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  // 현재 설정(스트림 종류 + 음량 + BPM) 그대로 메트로놈을 3초간 울려본다.
+  // 홈 화면의 플레이어와는 별개 인스턴스를 쓰고 끝나면 즉시 해제한다.
+  bool _testingMetronome = false;
+  Future<void> _testMetronomeSound() async {
+    setState(() => _testingMetronome = true);
+    final metro = MetronomeService();
+    try {
+      await metro.init(
+        mixWithOtherAudio: _s.mixWithOtherAudio,
+        volume: _s.metronomeVolume,
+        audibleDuringCall: _s.metronomeDuringCall,
+      );
+      await metro.start(_s.bpm);
+      await Future.delayed(const Duration(seconds: 3));
+    } catch (e) {
+      debugPrint('[Metro] 소리 테스트 실패: $e');
+    } finally {
+      metro.dispose();
+      if (mounted) setState(() => _testingMetronome = false);
+    }
   }
 
   // 메트로놈 음량 슬라이더 — 스피커로만 들을 때 음량이 부족한 경우를 위해 노출.

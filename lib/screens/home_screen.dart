@@ -95,8 +95,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 이동은 잡음으로 보고 잘라낸다 (9/7 실측에서 17~24km/h짜리 잡음 세그먼트가
   // 거리를 48% 부풀렸음. 25km/h 고정 상한은 슬로우 조깅에 너무 헐거웠음)
   static const double _degradedSpeedTolerance = 1.5;
-  // 최근 정밀 구간에서 측정된 이동 속도(m/s). 실측 전 기본값은 슬로우 조깅 기준 7.2km/h
-  double _recentSpeedMps = 2.0;
+  // 기준속도 산출용 — 정확도가 확실히 좋은(이 값 이하) 구간의 이동거리/시간만 누적해
+  // 평균을 낸다. 10~35m 구간은 "정밀"로 분류되지만 이미 잡음이 커서 초당 속도가
+  // 9~24km/h로 튀므로, 기준속도 입력으로는 쓰지 않는다 (9/9 실측에서 이것 때문에
+  // 기준속도가 9.8km/h로 부풀어 저정밀 상한이 14.7km/h까지 열렸음)
+  static const double _speedRefMaxAccuracyMeters = 12.0;
+  double _goodSpeedMeters = 0.0;
+  double _goodSpeedSeconds = 0.0;
+  // 충분한 표본이 쌓이기 전 기본값은 슬로우 조깅 기준 7.2km/h
+  static const double _defaultReferenceSpeedMps = 2.0;
+  static const double _minSpeedRefSeconds = 30.0;
+  double get _referenceSpeedMps => _goodSpeedSeconds >= _minSpeedRefSeconds
+      ? _goodSpeedMeters / _goodSpeedSeconds
+      : _defaultReferenceSpeedMps;
+  // 바퀴 기준점은 이보다 정확한 측위로만 잡는다 (9/9에 acc=98.4m 첫 측위가 기준점이
+  // 되면서 모든 바퀴의 최근접이 30m씩 밀렸음)
+  static const double _lapAnchorMaxAccuracyMeters = 20.0;
   static const double _maxPlausibleSpeedKmh = 25.0; // 이보다 빠른 순간 속도는 GPS 튐으로 간주 (아래 "캡" 참고)
   // 연속으로 정확도 기준을 못 넘는 상태가 몇 초나 지속되는지 진단하기 위한 카운터
   int _gpsRejectStreak = 0;
@@ -119,7 +133,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _inDegradedGpsMode = false;
   Timer? _gpsWatchdogTimer;
   int _gpsStreamRestarts = 0;
-  static const int _gpsStaleSeconds = 45;
+  // 9/9 로그에서 화면 꺼짐 중 콜백이 55초간 완전히 끊겨 그 사이 한 바퀴가 통째로
+  // 누락됐음(랩3이 391초). 재시작은 비용이 작으므로 더 일찍 개입하도록 45→30초
+  static const int _gpsStaleSeconds = 30;
   // 콜백 간격이 이보다 짧으면 순간속도 계산을 건너뜀 — distanceFilter가 촘촘해서(1m)
   // 아주 짧은 시간차에 콜백이 몰릴 때는 정상적인 GPS 잡음(2~5m)만으로도 순간속도가
   // 크게 튀어 오탐하기 쉬움
@@ -699,7 +715,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _gpsAcceptedTotal = 0;
     _lastAcceptedGpsAt = null;
     _inDegradedGpsMode = false;
-    _recentSpeedMps = 2.0;
+    _goodSpeedMeters = 0.0;
+    _goodSpeedSeconds = 0.0;
     _lapStartPoint = null;
     _lapCount = 0;
     _hasLeftLapZone = false;
@@ -894,6 +911,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           smoothed,
           approachMeters: math.max(_lapApproachMeters, pos.accuracy),
           departMeters: math.max(_lapDepartConfirmMeters, pos.accuracy * 0.25),
+          accuracyMeters: pos.accuracy,
         );
 
         if (_lastGpsPoint != null && _lastGpsTime != null) {
@@ -942,21 +960,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           // 이건 달린 게 아니라 측위 잡음이 그대로 거리로 들어간 것. 25km/h 상한은
           // 잡음을 거르기에 너무 헐거웠음 → 최근 정밀 구간에서 측정된 속도의 1.5배를
           // 넘지 못하게 한다(멈춰 있으면 짧은 값이 그대로 쓰이므로 과소 위험은 없음).
+          // ── 기준속도 산출 방식 교체 (2026-09-09) ────────────────────────────
+          // v28의 EMA는 "정확도 35m 이하"면 전부 입력으로 받았는데, 10~35m 구간은
+          // 이미 잡음이 커서 초당 속도가 9~24km/h로 튄다. 9/9 로그에서 화면이 꺼지기
+          // 직전 정확도가 3→14m로 나빠지며 그 튄 값들이 EMA를 끌어올려
+          // `기준속도=9.8km/h`가 됐고(실제 6~7km/h), 상한이 14.7km/h까지 열려
+          // 저정밀 구간 과다 계상이 +8% 남았음.
+          // → EMA 대신 **정확도가 확실히 좋은 구간의 누적 평균**으로 바꾼다.
+          //   한두 개의 튄 값이 평균을 못 흔들고, 데이터가 쌓일수록 실제 페이스에 수렴함.
           if (degraded) {
-            final plausible = _recentSpeedMps * _degradedSpeedTolerance * elapsedSec;
+            final plausible = _referenceSpeedMps * _degradedSpeedTolerance * elapsedSec;
             if (cappedMeters > plausible) cappedMeters = plausible;
-          } else {
-            // 정밀 구간의 속도만 최근 속도 추정에 반영 (EMA)
+          } else if (pos.accuracy <= _speedRefMaxAccuracyMeters) {
             final mps = meters / elapsedSec;
             if (mps > 0.3 && mps < _maxPlausibleSpeedKmh / 3.6) {
-              _recentSpeedMps += 0.2 * (mps - _recentSpeedMps);
+              _goodSpeedMeters += meters;
+              _goodSpeedSeconds += elapsedSec;
             }
           }
           FileLogger.instance.log(
             '[GPS]${degraded ? "(저정밀)" : ""} acc=${pos.accuracy.toStringAsFixed(1)}m '
             'speed=${speedKmh.toStringAsFixed(1)}km/h '
             '${cappedMeters < meters - 0.05 ? "capped ${meters.toStringAsFixed(1)}m->${cappedMeters.toStringAsFixed(1)}m" : "meters=${meters.toStringAsFixed(1)}m"} '
-            '${degraded ? "기준속도=${(_recentSpeedMps * 3.6).toStringAsFixed(1)}km/h " : ""}'
+            '${degraded ? "기준속도=${(_referenceSpeedMps * 3.6).toStringAsFixed(1)}km/h " : ""}'
             '누적거리=${_distanceKm.toStringAsFixed(3)}km 수락=$_gpsAcceptedTotal개 거부=$_gpsRejectedTotal개',
           );
 
@@ -1037,8 +1063,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     LatLng point, {
     required double approachMeters,
     required double departMeters,
+    required double accuracyMeters,
   }) {
-    _lapStartPoint ??= point;
+    // ── 기준점은 "정확한 측위"로만 잡을 것 (2026-09-09) ─────────────────────
+    // 9/9 로그: 러닝 시작 첫 측위가 acc=98.4m였는데 v28에서 랩 판정의 정확도
+    // 게이트를 없애면서 그 포인트가 그대로 기준점이 됐음. 기준점이 실제 출발선에서
+    // 약 30m 어긋난 채 고정되니, 매 바퀴 "최근접"이 실제로는 몇 m를 스쳐 지나가는데도
+    // 30.4 / 30.5 / 29.0 / 30.5 / 29.8m로 일정하게 찍혔음(= 고정 오프셋의 증거).
+    // 기준점만 정확도 게이트를 두고, 일단 잡힌 뒤의 판정에는 모든 포인트를 그대로 쓴다.
+    if (_lapStartPoint == null) {
+      if (accuracyMeters > _lapAnchorMaxAccuracyMeters) return;
+      _lapStartPoint = point;
+      FileLogger.instance.log(
+        '[LAP] 기준점 설정 (acc=${accuracyMeters.toStringAsFixed(1)}m)',
+      );
+    }
     final distFromStart = Geolocator.distanceBetween(
       _lapStartPoint!.latitude, _lapStartPoint!.longitude,
       point.latitude, point.longitude,
