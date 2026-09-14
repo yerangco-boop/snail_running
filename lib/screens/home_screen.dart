@@ -192,6 +192,43 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _lapClosestSeconds = 0;
   double _lapClosestDistanceKm = 0.0;
 
+  // ── 위치가 부정확할 때는 "걸음 수 × 실측 보폭"으로 거리를 잰다 (2026-09-14, v31) ──
+  // 9/10·12·13 세 번의 로그로 확정: 화면이 꺼지면 측위가 3m → 40~98m로 무너지고
+  // (12초에 한 번꼴, 와이파이/기지국 수준), 그 좌표로 거리·바퀴·경로를 계산하니
+  //   - 경로가 지그재그로 튐 (지도 스크린샷)
+  //   - 화면 끔 구간 거리 +17% (9/10: 걸음 1,805보 × 66.5cm = 1.20km인데 1.40km 누적)
+  //   - 가짜 바퀴 (9/10 랩10~16이 62~119초 간격 — 정상 랩은 160~175초)
+  // 반면 걸음 수는 화면이 꺼져도 150~160spm으로 흔들림 없이 들어오고, 화면 켬 구간의
+  // 보폭은 세 날 모두 65~67cm로 일정했음. 그래서 GPS가 좋을 때 보폭을 배워두고,
+  // GPS가 나쁠 때는 그 보폭으로 거리를 채운다 (러닝워치의 풋팟 보정과 같은 방식).
+  // geolocator의 forceLocationManager는 안드로이드 12+에서 결국 fused 프로바이더를
+  // 다시 쓰기 때문에 "GPS 칩을 강제로 켜는" 설정으로는 해결되지 않음(소스 확인).
+  static const double _gpsReliableAccuracyMeters = 20.0; // 이보다 나쁘면 좌표를 거리/경로에 안 씀
+  static const double _gpsReliableMaxGapSec = 5.0;       // 콜백 간격이 이보다 길면 직선거리를 안 믿음
+  static const double _strideCalMaxAccuracyMeters = 12.0;
+  static const int _strideCalWarmupSeconds = 30; // 시작 직후 GPS 튐(120~245km/h)을 보폭 학습에서 제외
+  static const int _minStrideCalSteps = 150;
+  int _stepsAtLastGpsFix = 0;
+  double _lastGpsFixAccuracy = 999.0;
+  bool _prevCallbackReliable = false;
+  double _strideCalMeters = 0.0;
+  int _strideCalSteps = 0;
+  double? get _calibratedStrideMeters => _strideCalSteps >= _minStrideCalSteps
+      ? _strideCalMeters / _strideCalSteps
+      : null;
+  bool get _stepsAlive => _lastStepAt != null &&
+      DateTime.now().difference(_lastStepAt!).inSeconds <= 10;
+  // 바퀴: GPS가 좋았던 랩에서 실측한 한 바퀴 거리 — 위치가 나쁠 때는 이 거리를
+  // 채울 때마다 한 바퀴로 센다 (40~98m 오차 좌표로는 시작점 통과를 판단할 수 없음)
+  final List<double> _reliableLapMeters = [];
+  double _lastLapDistanceKm = 0.0;
+  bool _lapIntervalHadUnreliableGps = false;
+  double? get _learnedLapMeters {
+    if (_reliableLapMeters.isEmpty) return null;
+    final sorted = List<double>.from(_reliableLapMeters)..sort();
+    return sorted[sorted.length ~/ 2];
+  }
+
   LatLng _applyEma(LatLng raw) {
     final prev = _emaPoint;
     if (prev == null) return raw;
@@ -729,6 +766,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _lapClosestPoint = null;
     _lapClosestSeconds = 0;
     _lapClosestDistanceKm = 0.0;
+    _stepsAtLastGpsFix = 0;
+    _lastGpsFixAccuracy = 999.0;
+    _prevCallbackReliable = false;
+    _strideCalMeters = 0.0;
+    _strideCalSteps = 0;
+    _reliableLapMeters.clear();
+    _lastLapDistanceKm = 0.0;
+    _lapIntervalHadUnreliableGps = false;
     _workoutStartedAt = DateTime.now();
     // 화면이 꺼진 뒤에도 위치 콜백이 살아있으려면 알림 권한 + 배터리 최적화 예외가 필요
     await BackgroundPermissions.ensureForBackgroundTracking();
@@ -899,26 +944,47 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
         final rawPoint = LatLng(pos.latitude, pos.longitude);
         final now = pos.timestamp;
+        final fixReliable = pos.accuracy <= _gpsReliableAccuracyMeters;
+        if (!fixReliable) _lapIntervalHadUnreliableGps = true;
         // EMA 스무딩 좌표는 경로 표시(_routePoints)와 지도 마커 전용 — 거리 계산은
         // 원시 좌표로 되돌려, 스무딩이 곡선 구간에서 경로를 안쪽으로 당겨 실제보다
-        // 짧게 잡히게 하는 효과가 거리 수치에 섞이지 않도록 함
-        final smoothed = _applyEma(rawPoint);
-        _emaPoint = smoothed;
-        // 바퀴 판정: 정확도가 나쁜 포인트를 "버리면" 저정밀 구간에서 바퀴가 통째로
-        // 안 잡힌다(9/7 실측: 화면 끄면 거리는 쌓이는데 바퀴만 멈춤). 버리는 대신
-        // 판정 반경을 그 시점 측위 오차만큼 넓혀서 같이 판단한다.
-        _checkLapCompletion(
-          smoothed,
-          approachMeters: math.max(_lapApproachMeters, pos.accuracy),
-          departMeters: math.max(_lapDepartConfirmMeters, pos.accuracy * 0.25),
-          accuracyMeters: pos.accuracy,
-        );
+        // 짧게 잡히게 하는 효과가 거리 수치에 섞이지 않도록 함.
+        // v31: 부정확한 좌표(>20m)는 스무딩·경로에 아예 섞지 않는다 — 지도 경로가
+        // 들쭉날쭉하던 원인. 부정확 구간에서 복귀하면 새 좌표에서 스무딩을 다시 시작
+        final LatLng smoothed;
+        if (fixReliable) {
+          smoothed = _prevCallbackReliable ? _applyEma(rawPoint) : rawPoint;
+          _emaPoint = smoothed;
+        } else {
+          smoothed = _emaPoint ?? rawPoint;
+        }
+        _prevCallbackReliable = fixReliable;
+        // 바퀴 판정: 좌표가 믿을 만하면 시작점 통과(CPA)로 센다. 좌표가 나쁠 때는
+        // 이미 한 바퀴 거리를 배웠다면 거리로 세고(_checkDistanceLap), 아직 못 배웠으면
+        // 예전처럼 판정 반경을 넓혀서라도 위치로 판단한다
+        final learnedLap = _learnedLapMeters;
+        if (fixReliable || learnedLap == null) {
+          _checkLapCompletion(
+            fixReliable ? smoothed : rawPoint,
+            approachMeters: math.max(_lapApproachMeters, pos.accuracy),
+            departMeters: math.max(_lapDepartConfirmMeters, pos.accuracy * 0.25),
+            accuracyMeters: pos.accuracy,
+          );
+        }
 
         if (_lastGpsPoint != null && _lastGpsTime != null) {
           final elapsedSec = now.difference(_lastGpsTime!).inMilliseconds / 1000.0;
+          final stride = _calibratedStrideMeters;
+          // 이 구간의 직선거리를 믿으려면 양 끝 좌표가 모두 정확하고 간격이 짧아야 함
+          // (9/12 19:11:43: 저정밀 좌표 다음 정밀 좌표가 오자 "2초에 90m"로 계산됐음)
+          final segmentReliable = fixReliable &&
+              _lastGpsFixAccuracy <= _gpsReliableAccuracyMeters &&
+              elapsedSec <= _gpsReliableMaxGapSec;
+          final useSteps = !segmentReliable && stride != null && _stepsAlive;
           // 저정밀 구간: 매 콜백마다 누적하면 측위 잡음이 그대로 거리로 부풀어 오르므로,
           // 충분한 시간과 이동거리가 쌓일 때까지 기준점을 유지했다가 한 번에 반영
-          if (degraded) {
+          // (걸음 기반으로 잴 수 있으면 잡음 문제가 없으므로 기다리지 않음)
+          if (degraded && !useSteps) {
             final movedSoFar = Geolocator.distanceBetween(
               _lastGpsPoint!.latitude, _lastGpsPoint!.longitude,
               rawPoint.latitude, rawPoint.longitude,
@@ -968,35 +1034,64 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           // 저정밀 구간 과다 계상이 +8% 남았음.
           // → EMA 대신 **정확도가 확실히 좋은 구간의 누적 평균**으로 바꾼다.
           //   한두 개의 튄 값이 평균을 못 흔들고, 데이터가 쌓일수록 실제 페이스에 수렴함.
-          if (degraded) {
+          final stepsDelta = math.max(0, _totalSteps - _stepsAtLastGpsFix);
+          if (useSteps) {
+            // 좌표가 부정확 → 그 사이 걸음 수 × GPS 좋을 때 배운 보폭
+            cappedMeters = stepsDelta * stride!;
+          } else if (degraded) {
             final plausible = _referenceSpeedMps * _degradedSpeedTolerance * elapsedSec;
             if (cappedMeters > plausible) cappedMeters = plausible;
-          } else if (pos.accuracy <= _speedRefMaxAccuracyMeters) {
-            final mps = meters / elapsedSec;
-            if (mps > 0.3 && mps < _maxPlausibleSpeedKmh / 3.6) {
-              _goodSpeedMeters += meters;
-              _goodSpeedSeconds += elapsedSec;
+          } else {
+            // 정밀 구간이라도 걸음 수로 설명되지 않는 튐은 자른다 (보폭의 1.6배 + 1.5m 여유)
+            if (stride != null && _stepsAlive) {
+              final stepCap = stepsDelta * stride * 1.6 + 1.5;
+              if (cappedMeters > stepCap) cappedMeters = stepCap;
+            }
+            if (pos.accuracy <= _speedRefMaxAccuracyMeters) {
+              final mps = meters / elapsedSec;
+              if (mps > 0.3 && mps < _maxPlausibleSpeedKmh / 3.6) {
+                _goodSpeedMeters += meters;
+                _goodSpeedSeconds += elapsedSec;
+              }
+            }
+            // 보폭 학습: 정확도 12m 이하 + 짧은 간격 + 시작 30초 이후 + 한 걸음당 0.3~1.6m
+            if (segmentReliable &&
+                pos.accuracy <= _strideCalMaxAccuracyMeters &&
+                _seconds >= _strideCalWarmupSeconds &&
+                stepsDelta > 0) {
+              final perStep = meters / stepsDelta;
+              if (perStep >= 0.3 && perStep <= 1.6) {
+                _strideCalMeters += meters;
+                _strideCalSteps += stepsDelta;
+              }
             }
           }
+          final calStride = _calibratedStrideMeters;
           FileLogger.instance.log(
             '[GPS]${degraded ? "(저정밀)" : ""} acc=${pos.accuracy.toStringAsFixed(1)}m '
             'speed=${speedKmh.toStringAsFixed(1)}km/h '
-            '${cappedMeters < meters - 0.05 ? "capped ${meters.toStringAsFixed(1)}m->${cappedMeters.toStringAsFixed(1)}m" : "meters=${meters.toStringAsFixed(1)}m"} '
-            '${degraded ? "기준속도=${(_referenceSpeedMps * 3.6).toStringAsFixed(1)}km/h " : ""}'
+            '${useSteps ? "걸음기반 ${stepsDelta}보->${cappedMeters.toStringAsFixed(1)}m (gps=${meters.toStringAsFixed(1)}m)" : cappedMeters < meters - 0.05 ? "capped ${meters.toStringAsFixed(1)}m->${cappedMeters.toStringAsFixed(1)}m" : "meters=${meters.toStringAsFixed(1)}m"} '
+            '${degraded && !useSteps ? "기준속도=${(_referenceSpeedMps * 3.6).toStringAsFixed(1)}km/h " : ""}'
+            '보폭=${calStride == null ? "학습중($_strideCalSteps보)" : "${(calStride * 100).toStringAsFixed(1)}cm"} '
             '누적거리=${_distanceKm.toStringAsFixed(3)}km 수락=$_gpsAcceptedTotal개 거부=$_gpsRejectedTotal개',
           );
 
           setState(() {
             _distanceKm += cappedMeters / 1000.0;
-            _routePoints.add(smoothed);
+            if (fixReliable) _routePoints.add(smoothed);
             _checkAudioGuide();
           });
+          if (!fixReliable && learnedLap != null) _checkDistanceLap(learnedLap);
           _lastGpsPoint = rawPoint;
           _lastGpsTime = now;
+          _stepsAtLastGpsFix = _totalSteps;
+          _lastGpsFixAccuracy = pos.accuracy;
         } else {
-          _routePoints.add(smoothed);
+          if (fixReliable) _routePoints.add(smoothed);
           _lastGpsPoint = rawPoint;
           _lastGpsTime = now;
+          _stepsAtLastGpsFix = _totalSteps;
+          _lastGpsFixAccuracy = pos.accuracy;
         }
         setState(() {
           _mapCenter = smoothed;
@@ -1114,6 +1209,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     // 3단계: 최근접점을 지나 다시 멀어짐 → 그 최근접 시점을 바퀴 완료로 기록
     final sinceLastLap = _lapClosestSeconds - _lastLapSeconds;
+    final sinceLapMeters = (_lapClosestDistanceKm - _lastLapDistanceKm) * 1000.0;
+    // 한 바퀴 거리를 배운 뒤에는 그 60%도 안 달렸는데 시작점을 "지나간" 것은 잡음으로 본다
+    // (특히 부정확 구간에서 거리로 센 바퀴 직후 GPS가 돌아왔을 때의 중복 카운트 방지)
+    final learned = _learnedLapMeters;
+    if (learned != null && sinceLapMeters < learned * 0.6) {
+      FileLogger.instance.log(
+        '[LAP] 통과 감지했으나 보류(거리 미달) | 최근접=${_lapClosestSinceLeft.toStringAsFixed(1)}m '
+        '이번랩=${sinceLapMeters.toStringAsFixed(0)}m 학습랩=${learned.toStringAsFixed(0)}m',
+      );
+      _lapClosestSinceLeft = double.infinity;
+      return;
+    }
     if (sinceLastLap < _lapMinIntervalSeconds) {
       FileLogger.instance.log(
         '[LAP] 통과 감지했으나 보류(최소 랩 간격 미달) | '
@@ -1140,11 +1247,53 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _lapSplitSeconds.add(lapSeconds);
       _lapSplitDistanceKm.add(lapDistanceKm);
     });
+    // 첫 바퀴(출발~기준점 오차 포함)를 뺀, 구간 전체가 정확했던 랩만 한 바퀴 거리로 학습
+    if (!_lapIntervalHadUnreliableGps &&
+        _lapCount >= 2 &&
+        sinceLapMeters > 100 &&
+        sinceLapMeters < 2000) {
+      _reliableLapMeters.add(sinceLapMeters);
+      FileLogger.instance.log(
+        '[LAP] 한 바퀴 거리 학습 ${sinceLapMeters.toStringAsFixed(0)}m '
+        '(중앙값=${_learnedLapMeters!.toStringAsFixed(0)}m, 표본 ${_reliableLapMeters.length}개)',
+      );
+    }
     _lastLapSeconds = lapSeconds;
+    _lastLapDistanceKm = lapDistanceKm;
+    _lapIntervalHadUnreliableGps = accuracyMeters > _gpsReliableAccuracyMeters;
     _lapMaxAwayMeters = distFromStart;
     _lapClosestSinceLeft = double.infinity;
     // 이미 시작점에서 멀어지는 중이므로, 아웃존 판정을 다시 거치게 두면 된다
     _hasLeftLapZone = distFromStart > _lapMinAwayMeters;
+  }
+
+  // 좌표가 부정확한 동안의 바퀴 판정 — 40~98m 오차 좌표로는 시작점을 지났는지 알 수 없어
+  // 9/10에 62~119초 간격의 가짜 바퀴가 7개 찍혔음. 대신 GPS가 좋던 랩에서 배운 한 바퀴
+  // 거리를 (걸음 기반으로 정확해진) 누적거리가 채울 때마다 한 바퀴로 센다.
+  void _checkDistanceLap(double lapMeters) {
+    final sinceMeters = (_distanceKm - _lastLapDistanceKm) * 1000.0;
+    if (sinceMeters < lapMeters) return;
+    // 남는 거리는 다음 바퀴로 넘겨 누적 오차가 쌓이지 않게 함
+    final lapDistanceKm = _lastLapDistanceKm + lapMeters / 1000.0;
+    final lapSeconds = _seconds;
+    FileLogger.instance.log(
+      '[LAP] 바퀴 완료(거리 기반, 위치 부정확) | 이번랩=${sinceMeters.toStringAsFixed(0)}m '
+      '학습랩=${lapMeters.toStringAsFixed(0)}m 경과=${lapSeconds - _lastLapSeconds}s '
+      '판정=카운트(총 ${_lapCount + 1}바퀴)',
+    );
+    setState(() {
+      _lapCount++;
+      _lapCompletionPoints.add(_lapStartPoint ?? _emaPoint ?? _mapCenter);
+      _lapSplitSeconds.add(lapSeconds);
+      _lapSplitDistanceKm.add(lapDistanceKm);
+    });
+    _lastLapSeconds = lapSeconds;
+    _lastLapDistanceKm = lapDistanceKm;
+    _lapIntervalHadUnreliableGps = true;
+    _lapMaxAwayMeters = 0.0;
+    _lapClosestSinceLeft = double.infinity;
+    // 위치가 돌아오면 다시 40m 아웃존부터 거치게 함 (중복은 위의 거리 60% 조건이 막음)
+    _hasLeftLapZone = false;
   }
 
   void _announceWorkoutStart() {
@@ -1180,6 +1329,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _lastGpsPoint = null;
     _lastGpsTime = null;
     _emaPoint = null;
+    _prevCallbackReliable = false;
+    _lastGpsFixAccuracy = 999.0;
     _gpsRejectStreak = 0;
     _gpsRejectStreakStart = null;
     _startGpsTracking();
