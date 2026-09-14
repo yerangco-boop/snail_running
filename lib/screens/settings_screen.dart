@@ -724,7 +724,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  "© 2026 Hong Jeong-pyo. All rights reserved.",
+                  "© 2026 Hong Jungpyo. All rights reserved.",
                   style: TextStyle(
                     fontSize: 11,
                     letterSpacing: 0.2,
