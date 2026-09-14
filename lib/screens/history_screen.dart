@@ -246,34 +246,26 @@ class HistoryScreenState extends State<HistoryScreen> {
               ),
               const SizedBox(height: 14),
 
-              // 시간 + 페이스
-              Row(
+              // 시간·페이스·케이던스·칼로리·바퀴 — Row는 폭이 모자라면 카드 밖으로
+              // 넘쳐서(15바퀴 칩이 오른쪽으로 잘림) Wrap으로 자동 줄바꿈되게 함
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
                 children: [
                   _statChip(Icons.timer_outlined, record.formattedDuration,
                       surface, grey),
-                  const SizedBox(width: 12),
                   _statChip(Icons.speed_outlined, "${record.formattedPace}/km",
                       surface, grey),
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              // 케이던스 + 칼로리
-              Row(
-                children: [
                   _statChip(Icons.directions_walk_outlined,
                       "${record.avgCadence} spm", surface, grey),
-                  const SizedBox(width: 12),
                   _statChip(
                       Icons.local_fire_department_outlined,
                       "${record.caloriesBurned.toStringAsFixed(0)} kcal",
                       surface,
                       grey),
-                  if (record.lapCount > 0) ...[
-                    const SizedBox(width: 12),
+                  if (record.lapCount > 0)
                     _statChip(Icons.replay_circle_filled_outlined,
                         "${record.lapCount}바퀴", surface, grey),
-                  ],
                 ],
               ),
               const SizedBox(height: 10),

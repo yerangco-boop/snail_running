@@ -668,9 +668,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
           Divider(color: _s.preset.cardBorder, height: 1),
           const SizedBox(height: 14),
-          Text(
-            "© 2026 홍정표 · Made by 홍정표",
-            style: TextStyle(fontSize: 12, color: _s.preset.grey),
+          // 제작 정보 — 라벨(대문자 자간) / 이름 / 소속 / 저작권 4단 위계
+          SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "DEVELOPED BY",
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.8,
+                    color: _s.preset.grey,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        width: 3,
+                        decoration: BoxDecoration(
+                          color: _accent,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "홍정표",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: _s.preset.onBackground,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              "한국폴리텍대학 충주캠퍼스 · AI드론과",
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: _s.preset.onBackground.withValues(alpha: 0.72),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  "© 2026 Hong Jeong-pyo. All rights reserved.",
+                  style: TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 0.2,
+                    color: _s.preset.grey,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
