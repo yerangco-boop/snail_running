@@ -114,6 +114,15 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                   'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
               userAgentPackageName: 'snail_running',
             ),
+            // 지도 출처 표시 — OpenStreetMap(ODbL)·CARTO 둘 다 표기가 이용 조건임.
+            // 화면을 가리지 않도록 오른쪽 아래 ⓘ 버튼을 눌렀을 때만 펼쳐지는 방식
+            const RichAttributionWidget(
+              showFlutterMapAttribution: false,
+              attributions: [
+                TextSourceAttribution('OpenStreetMap contributors'),
+                TextSourceAttribution('CARTO'),
+              ],
+            ),
             PolylineLayer(
               polylines: [buildRoutePolyline(record.routePoints!, _accent)],
             ),

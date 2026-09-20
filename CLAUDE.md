@@ -66,6 +66,17 @@ Lap counting (`_checkLapCompletion`) counts a loop when the runner moves `_lapMi
 `DatabaseService` is a singleton wrapping `sqflite` (`snail_running.db`). All methods guard against web with `kIsWeb` checks (sqflite has no web support). Schema: single `workouts` table — `id, date, distance_km, duration_seconds, avg_pace_sec`.
 
 ### Map
+**출처 표시 (2026-09-20, v34 추가)**: 타일은 OpenStreetMap 데이터(ODbL) + CARTO 렌더링이라
+양쪽 표기가 이용 조건인데 v33까지 앱 어디에도 표기가 없었음. 이력 상세 지도에는
+`RichAttributionWidget`(ⓘ 버튼), 주행 화면에는 하단 여백에 `지도 © OpenStreetMap · CARTO` 한 줄 추가.
+주행 화면은 지도 위에 알파 0.9 그라디언트 오버레이가 덮여 있어 **FlutterMap children 안에 넣으면
+가려짐** — 반드시 오버레이보다 위(Stack의 마지막 child)에 얹을 것. CARTO 무료 한도는 월 500만 타일.
+
+**지도 배경이 안 보이고 경로선만 나오는 경우**: 타일은 매번 인터넷에서 받아오고 `flutter_map`은
+기본적으로 디스크 캐시를 하지 않는 반면, 경로선·마커는 저장된 좌표로 기기에서 그린다.
+따라서 "경로는 있는데 배경이 흰색"이면 GPS 문제가 아니라 **그 시점에 인터넷이 안 됐던 것**
+(모바일 데이터 꺼짐/신호 약함/데이터 절약 모드). 기록 자체는 정상 저장됨.
+
 OpenStreetMap via `flutter_map` + CartoDB light tiles (`basemaps.cartocdn.com/light_all`, matches the current light theme presets — was `dark_all` under the old dark-theme design). No API key required. `MapController` lives in `HomeScreen` state. The current-location marker uses `_s.accent` with no glow/shadow (a heavy shadow made it look like a warning light on the light tiles — fixed 2026-07-03).
 
 ## Key design notes from SPEC_v2.md

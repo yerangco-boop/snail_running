@@ -2060,6 +2060,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ),
           ),
+
+          // ── 지도 출처 표시 ───────────────────────────────────
+          // 배경 지도 타일이 OpenStreetMap 데이터 + CARTO 렌더링이라 표기가 이용 조건임.
+          // FlutterMap 안에 넣으면 위의 그라디언트 오버레이(알파 0.9)에 가려지므로
+          // 오버레이보다 위에, 하단 컨트롤의 56px 여백 안에 얹는다
+          SafeArea(
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: IgnorePointer(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    '지도 © OpenStreetMap · CARTO',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: _s.preset.onRun.withValues(alpha: 0.45),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
