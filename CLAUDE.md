@@ -66,18 +66,24 @@ Lap counting (`_checkLapCompletion`) counts a loop when the runner moves `_lapMi
 `DatabaseService` is a singleton wrapping `sqflite` (`snail_running.db`). All methods guard against web with `kIsWeb` checks (sqflite has no web support). Schema: single `workouts` table — `id, date, distance_km, duration_seconds, avg_pace_sec`.
 
 ### Map
-**출처 표시 (2026-09-20, v34 추가)**: 타일은 OpenStreetMap 데이터(ODbL) + CARTO 렌더링이라
-양쪽 표기가 이용 조건인데 v33까지 앱 어디에도 표기가 없었음. 이력 상세 지도에는
-`RichAttributionWidget`(ⓘ 버튼), 주행 화면에는 하단 여백에 `지도 © OpenStreetMap · CARTO` 한 줄 추가.
+**타일 서버 교체 (2026-09-28, v35)**: CARTO(`basemaps.cartocdn.com`)가 어떤 좌표·스타일·UA로 요청해도
+2,049바이트짜리 "API KEY REQUIRED" 이미지만 돌려주게 됨(직접 curl로 확인) → 지도 배경이 워터마크/빈 화면.
+OSM 공용 서버(`https://tile.openstreetmap.org/{z}/{x}/{y}.png`)로 교체. **OSM 공용 타일은 소규모·개인 사용
+전제(이용정책)** — 플레이스토어 등 대규모 배포 시에는 키 기반 무료 티어(MapTiler/Stadia 등, 키는 `--dart-define`)로
+옮길 것. 이전에 적었던 "월 500만 타일 무료"는 더 이상 유효하지 않음.
+
+**출처 표시 (2026-09-20, v34 추가)**: OSM 데이터(ODbL) 표기가 이용 조건. 이력 상세 지도에는
+`RichAttributionWidget`(ⓘ 버튼), 주행 화면에는 하단 여백에 `지도 © OpenStreetMap contributors` 한 줄.
 주행 화면은 지도 위에 알파 0.9 그라디언트 오버레이가 덮여 있어 **FlutterMap children 안에 넣으면
-가려짐** — 반드시 오버레이보다 위(Stack의 마지막 child)에 얹을 것. CARTO 무료 한도는 월 500만 타일.
+가려짐** — 반드시 오버레이보다 위(Stack의 마지막 child)에 얹을 것.
 
-**지도 배경이 안 보이고 경로선만 나오는 경우**: 타일은 매번 인터넷에서 받아오고 `flutter_map`은
-기본적으로 디스크 캐시를 하지 않는 반면, 경로선·마커는 저장된 좌표로 기기에서 그린다.
-따라서 "경로는 있는데 배경이 흰색"이면 GPS 문제가 아니라 **그 시점에 인터넷이 안 됐던 것**
-(모바일 데이터 꺼짐/신호 약함/데이터 절약 모드). 기록 자체는 정상 저장됨.
+**지도 배경이 안 보이고 경로선만 나오는 경우**: 경로선·마커는 저장된 좌표로 기기에서 그리는 반면 타일은
+매번 인터넷에서 받아오고 `flutter_map`은 기본적으로 디스크 캐시를 하지 않는다. 원인은 두 가지:
+①그 시점에 인터넷이 안 됨(데이터 꺼짐/약한 신호/절약 모드), ②**타일 서버가 막혔거나 키를 요구**함(v34까지의
+CARTO가 이 경우 — 9/22 "인터넷 문제"라는 진단은 사실 이쪽이었을 가능성이 높음). 의심되면 타일 URL을 curl로 받아
+크기·내용부터 확인할 것(실제 타일은 수 KB~수십 KB, 워터마크는 2KB). 기록 자체는 정상 저장됨.
 
-OpenStreetMap via `flutter_map` + CartoDB light tiles (`basemaps.cartocdn.com/light_all`, matches the current light theme presets — was `dark_all` under the old dark-theme design). No API key required. `MapController` lives in `HomeScreen` state. The current-location marker uses `_s.accent` with no glow/shadow (a heavy shadow made it look like a warning light on the light tiles — fixed 2026-07-03).
+OpenStreetMap via `flutter_map` + OSM standard tiles. No API key required. `MapController` lives in `HomeScreen` state. The current-location marker uses `_s.accent` with no glow/shadow (a heavy shadow made it look like a warning light on the light tiles — fixed 2026-07-03).
 
 ## Key design notes from SPEC_v2.md
 
