@@ -65,6 +65,15 @@ Lap counting (`_checkLapCompletion`) counts a loop when the runner moves `_lapMi
 ### Data persistence
 `DatabaseService` is a singleton wrapping `sqflite` (`snail_running.db`). All methods guard against web with `kIsWeb` checks (sqflite has no web support). Schema: single `workouts` table — `id, date, distance_km, duration_seconds, avg_pace_sec`.
 
+### 업데이트 알림 (2026-09-28, v36)
+스토어 밖 APK 배포라 설치한 사람은 새 버전이 나온 걸 알 수 없어서 추가. `lib/services/update_checker.dart`가
+앱 시작 시(`HomeScreen._offerUpdate`) GitHub `releases/latest`의 `tag_name`(예: `v36`)을 읽어 설치된
+앱의 빌드 번호(versionCode)보다 크면 "새 버전이 있습니다" 다이얼로그를 띄우고, [업데이트]는
+`releases/latest/download/app-release.apk`를 브라우저로 열어 다운로드시킴(설치는 사용자가 직접 탭).
+**릴리스 태그는 반드시 pubspec versionCode와 같은 `vN` 규칙**이어야 비교가 맞음. 네트워크·파싱 실패는 조용히 무시,
+웹·러닝 중·다른 다이얼로그가 떠 있으면 그 실행에서는 건너뜀. **v35 이하를 이미 설치한 사람에게는 알림이 안 뜸**
+(기능이 v36부터 들어 있으므로) — 그분들은 QR로 한 번 직접 받아야 함.
+
 ### Map
 **타일 서버 교체 (2026-09-28, v35)**: CARTO(`basemaps.cartocdn.com`)가 어떤 좌표·스타일·UA로 요청해도
 2,049바이트짜리 "API KEY REQUIRED" 이미지만 돌려주게 됨(직접 curl로 확인) → 지도 배경이 워터마크/빈 화면.

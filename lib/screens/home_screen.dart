@@ -19,6 +19,7 @@ import '../services/file_logger.dart';
 import '../services/location_settings_factory.dart';
 import '../services/background_permissions.dart';
 import '../services/workout_snapshot.dart';
+import '../services/update_checker.dart';
 import '../utils/route_utils.dart';
 
 enum WorkoutState { idle, countdown, running, paused }
@@ -377,6 +378,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     // 비정상 종료로 남은 러닝 스냅샷이 있으면 복구 여부를 물어봄
     WidgetsBinding.instance.addPostFrameCallback((_) => _offerCrashRecovery());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _offerUpdate());
     // 위치를 먼저 구한 뒤 그 좌표로 날씨를 조회 (위치 조회 실패해도 fetchLocation이
     // 내부에서 예외를 삼키므로 이어서 항상 폴백 좌표로 날씨 조회가 진행됨)
     _fetchLocation().then((_) {
@@ -607,6 +609,43 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     }
     await WorkoutSnapshot.clear();
+  }
+
+  // 앱 시작 시 GitHub 최신 릴리스가 설치된 버전보다 높으면 업데이트 안내.
+  // 러닝 중이거나 다른 다이얼로그(기록 복구 등)가 떠 있으면 이번 실행에서는 건너뜀
+  Future<void> _offerUpdate() async {
+    final info = await UpdateChecker.check();
+    if (info == null || !mounted) return;
+    if (_workoutState != WorkoutState.idle) return;
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
+
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: _s.preset.background,
+        title: Text('새 버전이 있습니다',
+            style: TextStyle(color: _s.preset.onBackground, fontSize: 18)),
+        content: Text(
+          '최신 버전 ${info.tag}이 나왔습니다. (현재 v${info.currentCode})\n\n'
+          '[업데이트]를 누르면 다운로드가 시작됩니다. 끝나면 알림이나 다운로드 폴더의 '
+          '파일을 눌러 설치하세요. 기존 기록과 설정은 그대로 유지됩니다.',
+          style: TextStyle(color: _s.preset.onBackground.withValues(alpha: 0.8), height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('나중에', style: TextStyle(color: _s.preset.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('업데이트', style: TextStyle(color: _s.accent, fontSize: 16)),
+          ),
+        ],
+      ),
+    );
+    if (go == true) {
+      await launchUrl(Uri.parse(kLatestApkUrl), mode: LaunchMode.externalApplication);
+    }
   }
 
   // 러닝 중 뒤로가기를 눌렀을 때 확인 다이얼로그. 확인 시 앱 종료
