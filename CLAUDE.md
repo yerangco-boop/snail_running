@@ -104,6 +104,9 @@ OpenStreetMap via `flutter_map` + OSM standard tiles. No API key required. `MapC
 ## 환경
 
 - Flutter SDK 위치: `D:\src\flutter` (강의실 PC)
+- **2026-10-02: `JUNG WON DESK1` PC에 Flutter 3.47.6(stable) 설치** — `C:\src\flutter`, 사용자 PATH 등록. 웹(Chrome)·`dart analyze` 가능(설치 시점 오류 0·경고 0),
+  Android SDK·Visual Studio는 없음(APK는 CI로). **`flutter pub get`을 돌리면 자동 생성 파일 20여 개(GeneratedPluginRegistrant, ephemeral, local.properties, pubspec.lock 등)가
+  이 PC 경로로 바뀜** — 의도한 변경이 아니면 커밋 전에 `git checkout -- .`로 되돌릴 것
 - **노트북에는 Flutter 없음** — `flutter run`/`flutter build`/`dart analyze` 전부 불가. 코드 편집(Edit/Write)과 `git`만 가능. 2026-07-11~14에 GitHub Actions로 release APK 자동 빌드·배포가 갖춰진 뒤로는(아래 "GitHub Actions APK 자동 빌드·릴리스" 참고), **노트북에서 코드만 고쳐서 push하면 GitHub Release 페이지에서 서명된 APK를 받아 폰에 설치하는 흐름이 로컬 빌드 환경 없이도 가능**함 — 방학 중 배포 자체는 이 경로로 준비 완료. 다만 노트북에는 문법 오류를 미리 잡아줄 `dart analyze`/`flutter run -d chrome` 같은 즉석 확인 수단이 없어서, 오타/타입 오류가 있으면 push 후 5~6분 뒤 CI 빌드가 실패하고 나서야 알게 됨(2026-07-13 테마 커밋이 실제로 이렇게 검증 없이 커밋된 사례) — 되도록 변경을 작게 나누고, 여유가 있으면 노트북에 Flutter SDK만이라도 설치해 `flutter run -d chrome`으로 UI를 미리 확인하는 걸 권장(Android SDK/키스토어까지는 필요 없음, 로컬 APK 빌드/서명은 강의실 PC 전용으로 유지)
 - 한글 경로 문제로 `flutter analyze` 크래시 발생 → `dart analyze` 사용 (노트북에는 해당 없음 — Dart 자체가 없음)
 - **Android APK 빌드 환경 (강의실 PC, 2026-07-03 세팅 완료)**:
