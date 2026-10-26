@@ -24,8 +24,6 @@ class _MainScreenState extends State<MainScreen> {
 
   AppSettings get _s => widget.settings;
 
-  void _goToSettings() => setState(() => _tabIndex = 2);
-
   void _onTabSelected(int i) {
     setState(() => _tabIndex = i);
     if (i == 1) _historyKey.currentState?.reload();
@@ -40,7 +38,6 @@ class _MainScreenState extends State<MainScreen> {
           HomeScreen(
             settings: _s,
             onSettingsChanged: widget.onSettingsChanged,
-            onGoToSettings: _goToSettings,
           ),
           HistoryScreen(key: _historyKey, settings: _s),
           SettingsScreen(settings: _s, onChanged: widget.onSettingsChanged),

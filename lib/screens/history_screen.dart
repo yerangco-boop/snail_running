@@ -5,6 +5,9 @@ import '../models/workout_record.dart';
 import '../services/database_service.dart';
 import 'route_detail_screen.dart';
 
+// 요약 바의 집계 기간 (나이키런의 주/월/년/전체와 같은 방식)
+enum _Period { week, month, year, all }
+
 class HistoryScreen extends StatefulWidget {
   final AppSettings settings;
 
@@ -17,6 +20,9 @@ class HistoryScreen extends StatefulWidget {
 class HistoryScreenState extends State<HistoryScreen> {
   List<WorkoutRecord> _records = [];
   bool _loading = true;
+  _Period _period = _Period.all;
+  // 0 = 이번 주/월/년, -1 = 직전 …
+  int _offset = 0;
 
   @override
   void initState() {
@@ -38,6 +44,150 @@ class HistoryScreenState extends State<HistoryScreen> {
   Future<void> _delete(int id) async {
     await DatabaseService.instance.deleteWorkout(id);
     await reload();
+  }
+
+
+  // 선택한 기간의 [시작, 끝) — 전체면 null. 주는 월요일 시작
+  (DateTime, DateTime)? _periodRange() {
+    final now = DateTime.now();
+    switch (_period) {
+      case _Period.week:
+        final monday = DateTime(now.year, now.month, now.day)
+            .subtract(Duration(days: now.weekday - 1));
+        final start = DateTime(monday.year, monday.month, monday.day + 7 * _offset);
+        return (start, DateTime(start.year, start.month, start.day + 7));
+      case _Period.month:
+        return (DateTime(now.year, now.month + _offset, 1),
+            DateTime(now.year, now.month + _offset + 1, 1));
+      case _Period.year:
+        return (DateTime(now.year + _offset, 1, 1), DateTime(now.year + _offset + 1, 1, 1));
+      case _Period.all:
+        return null;
+    }
+  }
+
+  List<WorkoutRecord> get _periodRecords {
+    final range = _periodRange();
+    if (range == null) return _records;
+    return _records
+        .where((r) => !r.date.isBefore(range.$1) && r.date.isBefore(range.$2))
+        .toList();
+  }
+
+  // 더 이전 기간에 기록이 남아 있을 때만 이전 버튼 활성
+  bool get _canGoPrev {
+    final range = _periodRange();
+    if (range == null || _records.isEmpty) return false;
+    return _records.any((r) => r.date.isBefore(range.$1));
+  }
+
+  String get _rangeLabel {
+    final range = _periodRange();
+    if (range == null) return '전체 기간';
+    final start = range.$1;
+    switch (_period) {
+      case _Period.week:
+        final last = range.$2.subtract(const Duration(days: 1));
+        final endText = last.month == start.month ? '${last.day}일' : '${last.month}월 ${last.day}일';
+        return '${start.month}월 ${start.day}일 – $endText';
+      case _Period.month:
+        return '${start.year}년 ${start.month}월';
+      case _Period.year:
+        return '${start.year}년';
+      case _Period.all:
+        return '전체 기간';
+    }
+  }
+
+  void _selectPeriod(_Period p) => setState(() {
+        _period = p;
+        _offset = 0;
+      });
+
+  Widget _buildPeriodSelector() {
+    const labels = {
+      _Period.week: '주',
+      _Period.month: '월',
+      _Period.year: '년',
+      _Period.all: '전체',
+    };
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Tokens.card,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: widget.settings.preset.cardBorder),
+            ),
+            child: Row(
+              children: [
+                for (final p in _Period.values)
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _selectPeriod(p),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: _period == p ? Tokens.coralFace : Colors.transparent,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          labels[p]!,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: _period == p ? FontWeight.w700 : FontWeight.w500,
+                            color: _period == p ? Tokens.ink : Tokens.inkMuted,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 48,
+            child: Row(
+              children: [
+                if (_period != _Period.all)
+                  IconButton(
+                    tooltip: '이전',
+                    onPressed: _canGoPrev ? () => setState(() => _offset--) : null,
+                    icon: const Icon(Icons.chevron_left_rounded),
+                    color: Tokens.ink,
+                    disabledColor: Tokens.ink.withValues(alpha: 0.25),
+                  )
+                else
+                  const SizedBox(width: 48),
+                Expanded(
+                  child: Text(
+                    _rangeLabel,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w600, color: Tokens.ink),
+                  ),
+                ),
+                if (_period != _Period.all)
+                  IconButton(
+                    tooltip: '다음',
+                    onPressed: _offset < 0 ? () => setState(() => _offset++) : null,
+                    icon: const Icon(Icons.chevron_right_rounded),
+                    color: Tokens.ink,
+                    disabledColor: Tokens.ink.withValues(alpha: 0.25),
+                  )
+                else
+                  const SizedBox(width: 48),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -75,8 +225,10 @@ class HistoryScreenState extends State<HistoryScreen> {
                 ],
               ),
             ),
-            if (!_loading && _records.isNotEmpty)
+            if (!_loading && _records.isNotEmpty) ...[
+              _buildPeriodSelector(),
               _buildSummaryRow(preset, accent, grey),
+            ],
             Expanded(
               child: _loading
                   ? Center(child: CircularProgressIndicator(color: accent))
@@ -97,15 +249,16 @@ class HistoryScreenState extends State<HistoryScreen> {
 
   // 최상단 통계 요약 바
   Widget _buildSummaryRow(ThemePreset preset, Color accent, Color grey) {
-    final totalKm = _records.fold(0.0, (s, r) => s + r.distanceKm);
-    final totalSec = _records.fold(0, (s, r) => s + r.durationSeconds);
+    final recs = _periodRecords;
+    final totalKm = recs.fold(0.0, (s, r) => s + r.distanceKm);
+    final totalSec = recs.fold(0, (s, r) => s + r.durationSeconds);
     final avgPace = totalSec > 0 && totalKm > 0.01 ? totalSec / totalKm : 0.0;
     final avgM = (avgPace ~/ 60).toInt();
     final avgS = avgPace.toInt() % 60;
     final dividerColor = preset.onSurface.withValues(alpha: 0.12);
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
         gradient: LinearGradient(

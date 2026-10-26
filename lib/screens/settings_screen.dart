@@ -233,6 +233,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         icon: const Icon(Icons.copy_rounded, size: 18),
                         label: const Text('복사'),
                       ),
+                      TextButton.icon(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        label: const Text('닫기'),
+                      ),
                     ],
                   ),
                 ),
@@ -408,7 +413,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _settingCard(
               icon: Icons.bug_report_outlined,
               label: "실외 테스트 로그 공유",
-              trailing: Icon(Icons.ios_share, color: _s.preset.grey, size: 18),
+              trailing: const SizedBox.shrink(),
               onTap: _shareDebugLog,
             ),
 

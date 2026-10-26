@@ -28,13 +28,11 @@ enum WorkoutState { idle, countdown, running, paused }
 class HomeScreen extends StatefulWidget {
   final AppSettings settings;
   final VoidCallback onSettingsChanged;
-  final VoidCallback onGoToSettings;
 
   const HomeScreen({
     super.key,
     required this.settings,
     required this.onSettingsChanged,
-    required this.onGoToSettings,
   });
 
   @override
@@ -1715,9 +1713,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       body: SafeArea(
         child: Column(
           children: [
-            // 상단 바
+            // 상단 바 (설정 아이콘을 뺀 뒤에도 예전 높이를 유지)
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
               child: Row(
                 children: [
                   Text(
@@ -1728,12 +1726,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       color: _s.preset.onBackground,
                       letterSpacing: 0.5,
                     ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: widget.onGoToSettings,
-                    icon: Icon(Icons.settings_outlined,
-                        color: _s.preset.onBackground.withValues(alpha: 0.7), size: 26),
                   ),
                 ],
               ),
