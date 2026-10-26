@@ -232,9 +232,7 @@ class HistoryScreenState extends State<HistoryScreen> {
                     style: TextStyle(
                       fontSize: 44,
                       fontWeight: FontWeight.w700,
-                      // 무채색 카드 위에 테마의 보석톤(surface)을 그대로 얹어 "검정 위의 보석"처럼
-                      // 강조되도록 함 — 흰 텍스트(onSurface) 대신 의도적으로 채도색 사용
-                      color: surface,
+                      color: Tokens.coralDisplay,
                       height: 1.0,
                     ),
                   ),
@@ -308,7 +306,7 @@ class HistoryScreenState extends State<HistoryScreen> {
           const SizedBox(width: 5),
           Text(value,
               style: TextStyle(
-                  fontSize: 13, color: onSurface.withValues(alpha: 0.7))),
+                  fontSize: 13, color: Tokens.ink)),
         ],
       ),
     );

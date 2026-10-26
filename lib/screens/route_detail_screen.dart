@@ -181,7 +181,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                 style: TextStyle(
                   fontSize: 48,
                   fontWeight: FontWeight.w700,
-                  color: _p.surface,
+                  color: Tokens.coralDisplay,
                   height: 1.0,
                 ),
               ),
