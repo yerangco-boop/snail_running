@@ -1846,21 +1846,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Container(
                   width: 88,
                   height: 88,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [_s.preset.accentGradientStart, _s.preset.accentGradientEnd],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _s.accent.withValues(alpha: 0.4),
-                        blurRadius: 24,
-                        spreadRadius: 6,
-                      ),
-                    ],
-                  ),
+                  decoration: _coralButtonDecoration(),
                   child: const Center(
                     child: Icon(Icons.play_arrow_rounded, size: 52, color: Tokens.ink),
                   ),
@@ -2268,6 +2254,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  // 시작·일시정지·재개 공용 원형 버튼: 번지는 글로우 대신 또렷한 바깥 링 + 짧은 바닥 그림자
+  BoxDecoration _coralButtonDecoration() => BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_s.preset.accentGradientStart, _s.preset.accentGradientEnd],
+        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 2),
+        boxShadow: [
+          BoxShadow(color: Tokens.coralFace.withValues(alpha: 0.18), spreadRadius: 8),
+          BoxShadow(
+            color: const Color(0xFFB4694B).withValues(alpha: 0.30),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      );
+
   // 주행 중: 일시정지 버튼만
   Widget _buildRunningControl() {
     return GestureDetector(
@@ -2275,15 +2280,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Container(
         width: 80,
         height: 80,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [_s.preset.accentGradientStart, _s.preset.accentGradientEnd],
-          ),
-          boxShadow: [BoxShadow(color: _s.accent.withValues(alpha: 0.35), blurRadius: 20, spreadRadius: 4)],
-        ),
+        decoration: _coralButtonDecoration(),
         child: const Center(
           child: Icon(Icons.pause_rounded, size: 42, color: Tokens.ink),
         ),
@@ -2315,15 +2312,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           child: Container(
             width: 80,
             height: 80,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [_s.preset.accentGradientStart, _s.preset.accentGradientEnd],
-              ),
-              boxShadow: [BoxShadow(color: _s.accent.withValues(alpha: 0.35), blurRadius: 20, spreadRadius: 4)],
-            ),
+            decoration: _coralButtonDecoration(),
             child: const Center(
               child: Icon(Icons.play_arrow_rounded, size: 44, color: Tokens.ink),
             ),
