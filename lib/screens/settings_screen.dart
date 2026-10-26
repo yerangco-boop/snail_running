@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
+import '../theme/tokens.dart';
 import '../models/app_settings.dart';
 import '../services/database_service.dart';
 import '../services/file_logger.dart';
@@ -839,7 +840,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(Icons.check_rounded,
-                              color: Colors.white, size: 13),
+                              color: Tokens.ink, size: 13),
                         ),
                     ],
                   ),

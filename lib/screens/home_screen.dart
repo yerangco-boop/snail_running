@@ -9,6 +9,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../theme/tokens.dart';
 import '../models/app_settings.dart';
 import '../models/workout_record.dart';
 import '../services/metronome_service.dart';
@@ -667,7 +668,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('종료', style: TextStyle(color: Colors.red.shade400)),
+            child: Text('종료', style: TextStyle(color: Tokens.danger)),
           ),
         ],
       ),
@@ -1561,9 +1562,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               const SizedBox(height: 20),
               Divider(color: _s.preset.onSurface.withValues(alpha: 0.12)),
               const SizedBox(height: 12),
-              Text(
+              const Text(
                 "불편한 부위가 있나요?",
-                style: TextStyle(fontSize: 13, color: _s.preset.onSurface.withValues(alpha: 0.54)),
+                style: TextStyle(fontSize: 13, color: Tokens.inkMuted),
               ),
               const SizedBox(height: 10),
               Wrap(
@@ -1588,7 +1589,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         part,
                         style: TextStyle(
                           fontSize: 13,
-                          color: on ? Colors.white : _s.preset.onSurface.withValues(alpha: 0.54),
+                          color: on ? Tokens.ink : Tokens.inkMuted,
                         ),
                       ),
                     ),
@@ -1786,7 +1787,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     _s.goalType == GoalType.distance ? '목표 거리' : '목표 시간',
                     style: TextStyle(
                       fontSize: 13,
-                      color: _s.preset.onBackground.withValues(alpha: 0.38),
+                      color: _s.preset.onBackgroundMuted,
                       letterSpacing: 3,
                     ),
                   ),
@@ -1813,7 +1814,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     _s.goalType == GoalType.distance ? 'km' : '분',
                     style: TextStyle(
                       fontSize: 20,
-                      color: _s.preset.onBackground.withValues(alpha: 0.54),
+                      color: _s.preset.onBackgroundMuted,
                       letterSpacing: 6,
                       fontWeight: FontWeight.w300,
                     ),
@@ -1828,7 +1829,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     child: Text(
                       "탭하여 목표 변경",
-                      style: TextStyle(fontSize: 12, color: _s.preset.onBackground.withValues(alpha: 0.38)),
+                      style: TextStyle(fontSize: 12, color: _s.preset.onBackgroundMuted),
                     ),
                   ),
                 ],
@@ -1861,7 +1862,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ],
                   ),
                   child: const Center(
-                    child: Icon(Icons.play_arrow_rounded, size: 52, color: Colors.white),
+                    child: Icon(Icons.play_arrow_rounded, size: 52, color: Tokens.ink),
                   ),
                 ),
               ),
@@ -1906,7 +1907,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               '준비...',
               style: TextStyle(
                 fontSize: 20,
-                color: _s.preset.onBackground.withValues(alpha: 0.3),
+                color: _s.preset.onBackgroundMuted,
                 letterSpacing: 6,
                 fontWeight: FontWeight.w300,
               ),
@@ -2132,14 +2133,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: Colors.orange.withValues(alpha: 0.12),
+        color: Tokens.warnFace.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+        border: Border.all(color: Tokens.warnText.withValues(alpha: 0.35)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 20),
+          const Icon(Icons.warning_amber_rounded, color: Tokens.warnText, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -2159,7 +2160,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   style: TextStyle(
                     fontSize: 12,
                     height: 1.4,
-                    color: _s.preset.onBackground.withValues(alpha: 0.7),
+                    color: _s.preset.onBackgroundMuted,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -2168,7 +2169,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.9),
+                      color: Tokens.coralFace,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Text(
@@ -2176,7 +2177,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                        color: Tokens.ink,
                       ),
                     ),
                   ),
@@ -2284,7 +2285,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           boxShadow: [BoxShadow(color: _s.accent.withValues(alpha: 0.35), blurRadius: 20, spreadRadius: 4)],
         ),
         child: const Center(
-          child: Icon(Icons.pause_rounded, size: 42, color: Colors.white),
+          child: Icon(Icons.pause_rounded, size: 42, color: Tokens.ink),
         ),
       ),
     );
@@ -2303,9 +2304,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: Colors.transparent,
-              border: Border.all(color: Colors.red.shade400, width: 2),
+              border: Border.all(color: Tokens.danger, width: 2),
             ),
-            child: Center(child: Icon(Icons.stop_rounded, size: 32, color: Colors.red.shade400)),
+            child: const Center(child: Icon(Icons.stop_rounded, size: 32, color: Tokens.danger)),
           ),
         ),
         const SizedBox(width: 40),
@@ -2324,7 +2325,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               boxShadow: [BoxShadow(color: _s.accent.withValues(alpha: 0.35), blurRadius: 20, spreadRadius: 4)],
             ),
             child: const Center(
-              child: Icon(Icons.play_arrow_rounded, size: 44, color: Colors.white),
+              child: Icon(Icons.play_arrow_rounded, size: 44, color: Tokens.ink),
             ),
           ),
         ),
@@ -2519,7 +2520,7 @@ class _GoalSheetState extends State<_GoalSheet> {
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: widget.settings.accent,
-                foregroundColor: Colors.white,
+                foregroundColor: Tokens.ink,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 elevation: 0,
               ),
@@ -2552,7 +2553,7 @@ class _GoalSheetState extends State<_GoalSheet> {
             label,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: selected ? Colors.white : widget.settings.preset.grey,
+              color: selected ? Tokens.ink : widget.settings.preset.grey,
               fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
               fontSize: 15,
             ),

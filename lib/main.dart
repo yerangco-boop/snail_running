@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'models/app_settings.dart';
+import 'theme/tokens.dart';
 import 'screens/main_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
+    statusBarIconBrightness: Brightness.dark,
   ));
   runApp(const SnailRunningApp());
 }
@@ -56,24 +57,24 @@ class _SnailRunningAppState extends State<SnailRunningApp> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        brightness: Brightness.dark,
+        brightness: Brightness.light,
         scaffoldBackgroundColor: background,
         // surface/onSurface를 테마의 채도색(p.surface)이 아니라 근무채색 배경(p.background)에
         // 맞춰야 함 — Flutter가 다이얼로그·카드·네비게이션바 등 스타일 안 준 위젯의 기본
         // 배경으로 ColorScheme.surface를 쓰기 때문에, 여기가 채도색이면 라이트 테마 시절처럼
         // 원색이 화면 전체에 깔리는 문제가 재발함
-        colorScheme: ColorScheme.dark(
+        colorScheme: ColorScheme.light(
           surface: background,
           primary: accent,
           secondary: accent,
-          onPrimary: Colors.white,
+          onPrimary: Tokens.ink,
           onSurface: onBackground,
           outline: grey,
         ),
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          systemOverlayStyle: SystemUiOverlayStyle.light,
+          systemOverlayStyle: SystemUiOverlayStyle.dark,
         ),
         cardTheme: CardThemeData(
           color: background,
@@ -98,7 +99,7 @@ class _SnailRunningAppState extends State<SnailRunningApp> {
               // 선택된 탭 아이콘에 은은한 포인트 컬러 글로우
               return IconThemeData(
                 color: accent,
-                shadows: [Shadow(color: accent.withValues(alpha: 0.7), blurRadius: 10)],
+                
               );
             }
             return IconThemeData(color: grey);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/tokens.dart';
 import '../models/app_settings.dart';
 import '../models/workout_record.dart';
 import '../services/database_service.dart';
@@ -160,10 +161,10 @@ class HistoryScreenState extends State<HistoryScreen> {
         padding: const EdgeInsets.only(right: 20),
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.red.shade900.withValues(alpha: 0.3),
+          color: Tokens.danger.withValues(alpha: 0.14),
           borderRadius: BorderRadius.circular(16),
         ),
-        child: const Icon(Icons.delete_outline, color: Colors.red, size: 24),
+        child: const Icon(Icons.delete_outline, color: Tokens.danger, size: 24),
       ),
       confirmDismiss: (_) async {
         return await showDialog<bool>(
@@ -179,7 +180,7 @@ class HistoryScreenState extends State<HistoryScreen> {
               ),
               TextButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text("삭제", style: TextStyle(color: Colors.red)),
+                child: const Text("삭제", style: TextStyle(color: Tokens.danger)),
               ),
             ],
           ),
