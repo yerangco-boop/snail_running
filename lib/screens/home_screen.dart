@@ -20,7 +20,10 @@ import '../services/location_settings_factory.dart';
 import '../services/background_permissions.dart';
 import '../services/workout_snapshot.dart';
 import '../services/update_checker.dart';
+import '../services/stride_model.dart';
+import '../services/lap_memory.dart';
 import '../utils/route_utils.dart';
+import '../utils/measurement_filters.dart';
 
 enum WorkoutState { idle, countdown, running, paused }
 
@@ -214,9 +217,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _prevCallbackReliable = false;
   double _strideCalMeters = 0.0;
   int _strideCalSteps = 0;
-  double? get _calibratedStrideMeters => _strideCalSteps >= _minStrideCalSteps
-      ? _strideCalMeters / _strideCalSteps
-      : null;
+  // 보폭 우선순위: ①이번 러닝에서 GPS가 좋을 때 배운 값 ②지난 러닝들에서 저장해 둔
+  // 케이던스별 보폭(StrideModel). ②가 있어서 화면이 처음부터 꺼져 GPS가 나빠도
+  // 시작부터 걸음 기반으로 거리를 잴 수 있다(10/23: 보폭을 못 배워 거리가 부풀었음).
+  StrideModel _strideModel = StrideModel();
+  double? get _calibratedStrideMeters {
+    if (_strideCalSteps >= _minStrideCalSteps) return _strideCalMeters / _strideCalSteps;
+    final cadence = _liveCadenceSpm > 0 ? _liveCadenceSpm : _avgCadenceSpm;
+    return _strideModel.strideFor(cadence.toDouble());
+  }
+
+  // 화면이 꺼져도 가속도 센서는 계속 들어온다(로그: 초당 약 52개). 센서가 살아 있는데
+  // 걸음이 10초 넘게 없으면 제자리로 보고 GPS 흔들림을 거리로 쌓지 않는다.
+  DateTime? _lastAccelEventAt;
+  bool get _accelAlive => _lastAccelEventAt != null &&
+      DateTime.now().difference(_lastAccelEventAt!).inSeconds <= 3;
+  DateTime _lastStationaryLogAt = DateTime.fromMillisecondsSinceEpoch(0);
+  // GPS 튐 필터: 연속으로 이 횟수까지만 버리고, 그 이상 계속되면 실제 이동으로 받아들임
+  static const int _maxSpikeStreak = 3;
+  int _gpsSpikeStreak = 0;
+  // 보폭 모델로 시작하지 못하는(걷기처럼 아직 표본이 없는) 구간의 걸음당 최대 거리
+  static const double _maxStrideBoundMeters = 1.2;
+  // 걷는 케이던스(130spm 미만)에서는 걸음당 1m를 넘기 어렵다
+  double get _strideBoundForCadence =>
+      (_liveCadenceSpm > 0 && _liveCadenceSpm < 130) ? 1.0 : _maxStrideBoundMeters;
+  // 저장된 한 바퀴 거리(같은 코스에서 시작할 때만 사용)
+  LapMemory? _lapMemory;
+  double? _seededLapMeters;
   bool get _stepsAlive => _lastStepAt != null &&
       DateTime.now().difference(_lastStepAt!).inSeconds <= 10;
   // 바퀴: GPS가 좋았던 랩에서 실측한 한 바퀴 거리 — 위치가 나쁠 때는 이 거리를
@@ -225,7 +252,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   double _lastLapDistanceKm = 0.0;
   bool _lapIntervalHadUnreliableGps = false;
   double? get _learnedLapMeters {
-    if (_reliableLapMeters.isEmpty) return null;
+    if (_reliableLapMeters.isEmpty) return _seededLapMeters;
     final sorted = List<double>.from(_reliableLapMeters)..sort();
     return sorted[sorted.length ~/ 2];
   }
@@ -364,6 +391,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     FileLogger.instance.init();
+    _loadMeasurementMemory();
     _tts.setLanguage("ko-KR");
     _applyTtsVoice();
     _appliedMixSetting = _s.mixWithOtherAudio;
@@ -524,6 +552,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  // ── 측정 기억(보폭 모델·한 바퀴 거리) ─────────────────────────────────────
+  Future<void> _loadMeasurementMemory() async {
+    _strideModel = await StrideModel.load();
+    _lapMemory = await LapMemory.load();
+    if (_strideModel.isEmpty) {
+      // 처음 한 번: 지난 기록 중 걸음이 충분하고 보폭이 그럴듯한 러닝(케이던스 120 이상)으로 채움
+      try {
+        final records = await DatabaseService.instance.getWorkouts();
+        for (final r in records.take(30)) {
+          if (r.avgCadence < 120 || r.totalSteps < 1000) continue;
+          final meters = r.distanceKm * 1000.0;
+          final stride = meters / r.totalSteps;
+          if (stride < 0.45 || stride > 1.0) continue;
+          _strideModel.observe(r.avgCadence.toDouble(), meters, r.totalSteps);
+        }
+        if (!_strideModel.isEmpty) {
+          await _strideModel.save();
+          FileLogger.instance.log('[STRIDE] 지난 기록 ${records.length > 30 ? 30 : records.length}건으로 보폭 모델 초기화 '
+              '(150spm 기준 ${_strideModel.strideFor(150)?.toStringAsFixed(3) ?? "표본부족"}m)');
+        }
+      } catch (e) {
+        FileLogger.instance.log('[STRIDE] 지난 기록으로 초기화 실패: $e');
+      }
+    }
+  }
+
+  // 시작 위치가 저장된 코스 근처면 그때 배운 한 바퀴 거리를 처음부터 쓴다
+  void _seedLapFromMemory(LatLng start, String from) {
+    if (_seededLapMeters != null || _reliableLapMeters.isNotEmpty) return;
+    final seed = _lapMemory?.seedFor(start);
+    if (seed == null) return;
+    _seededLapMeters = seed;
+    FileLogger.instance.log('[LAP] 저장된 한 바퀴 거리 ${seed.toStringAsFixed(0)}m 적용 ($from)');
+  }
+
+  void _saveLapMemory() {
+    final start = _lapStartPoint;
+    final lap = _learnedLapMeters;
+    if (start == null || lap == null || _reliableLapMeters.isEmpty) return;
+    _lapMemory = LapMemory(lat: start.latitude, lon: start.longitude, lapMeters: lap);
+    _lapMemory!.save();
+  }
+
   // ── 비정상 종료 대비 스냅샷 ────────────────────────────────────────────────
   void _startSnapshotTimer() {
     _snapshotTimer?.cancel();
@@ -535,6 +606,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _saveSnapshot() async {
     if (_workoutStartedAt == null) return;
+    _strideModel.save();
     await WorkoutSnapshot(
       savedAt: DateTime.now(),
       startedAt: _workoutStartedAt!,
@@ -810,10 +882,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _prevCallbackReliable = false;
     _strideCalMeters = 0.0;
     _strideCalSteps = 0;
+    _gpsSpikeStreak = 0;
+    _seededLapMeters = null;
     _reliableLapMeters.clear();
     _lastLapDistanceKm = 0.0;
     _lapIntervalHadUnreliableGps = false;
     _workoutStartedAt = DateTime.now();
+    // 러닝 전 위치가 저장된 코스 근처면 한 바퀴 거리를 처음부터 쓴다
+    if (_hasLocation) _seedLapFromMemory(_mapCenter, '시작 위치');
     // 화면이 꺼진 뒤에도 위치 콜백이 살아있으려면 알림 권한 + 배터리 최적화 예외가 필요
     await BackgroundPermissions.ensureForBackgroundTracking();
     await _startGpsTracking();
@@ -861,6 +937,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ).listen(
       (e) {
         _accelEventCount++;
+        _lastAccelEventAt = DateTime.now();
         final rawMag = math.sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
         // 빠른 필터(잡음 제거) - 느린 필터(기준선) = 0을 중심으로 진동하는 밴드패스 신호.
         // 이렇게 해야 "정류된 크기 신호가 임계값 위에 눌러앉아 상승 엣지가 사라지는" 문제
@@ -984,6 +1061,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         final rawPoint = LatLng(pos.latitude, pos.longitude);
         final now = pos.timestamp;
         final fixReliable = pos.accuracy <= _gpsReliableAccuracyMeters;
+        // ── GPS 튐 걸러내기 (화면을 켠 러닝에서도 러닝당 5~9번, 1초에 10~27m 점프) ──
+        // 거리는 상한으로 막았지만 그 점이 지도 경로선·스무딩·바퀴 판정에 그대로 섞였다.
+        // 직전 좌표가 정확했고 간격이 짧은 정밀 구간에서, 속도나 걸음 수로 설명 안 되는
+        // 점프면 이 점을 통째로 버린다(기준점도 그대로 둠). 3번 연속이면 실제 이동으로 받아들임.
+        if (fixReliable && !degraded && _lastGpsPoint != null && _lastGpsTime != null &&
+            _lastGpsFixAccuracy <= _gpsReliableAccuracyMeters) {
+          final preElapsed = now.difference(_lastGpsTime!).inMilliseconds / 1000.0;
+          if (preElapsed >= _minGpsIntervalSec && preElapsed <= _gpsReliableMaxGapSec) {
+            final preMeters = Geolocator.distanceBetween(
+              _lastGpsPoint!.latitude, _lastGpsPoint!.longitude,
+              rawPoint.latitude, rawPoint.longitude,
+            );
+            final preSteps = math.max(0, _totalSteps - _stepsAtLastGpsFix);
+            if (isGpsSpike(
+                  meters: preMeters,
+                  elapsedSec: preElapsed,
+                  stepsDelta: preSteps,
+                  strideMeters: _stepsAlive ? _calibratedStrideMeters : null,
+                  maxSpeedKmh: _maxPlausibleSpeedKmh,
+                ) &&
+                _gpsSpikeStreak < _maxSpikeStreak) {
+              _gpsSpikeStreak++;
+              FileLogger.instance.log(
+                '[GPS] 튐 제외 acc=${pos.accuracy.toStringAsFixed(1)}m '
+                '${preMeters.toStringAsFixed(1)}m/${preElapsed.toStringAsFixed(1)}s '
+                '(${(preMeters / preElapsed * 3.6).toStringAsFixed(0)}km/h) 걸음=$preSteps '
+                '연속=$_gpsSpikeStreak',
+              );
+              return;
+            }
+          }
+        }
+        _gpsSpikeStreak = 0;
         if (!fixReliable) _lapIntervalHadUnreliableGps = true;
         // EMA 스무딩 좌표는 경로 표시(_routePoints)와 지도 마커 전용 — 거리 계산은
         // 원시 좌표로 되돌려, 스무딩이 곡선 구간에서 경로를 안쪽으로 당겨 실제보다
@@ -1002,7 +1112,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // 이미 한 바퀴 거리를 배웠다면 거리로 세고(_checkDistanceLap), 아직 못 배웠으면
         // 예전처럼 판정 반경을 넓혀서라도 위치로 판단한다
         final learnedLap = _learnedLapMeters;
-        if (fixReliable || learnedLap == null) {
+        // 한 바퀴 거리도 모르고 GPS도 나쁘면(저정밀) 위치로 판정하지 않는다 — 오차만큼
+        // 반경을 넓혀 세면 가짜 바퀴가 생김(10/19: 21바퀴, 실제 12~13). 못 세는 쪽이 안전.
+        if (fixReliable || (learnedLap == null && !degraded)) {
           _checkLapCompletion(
             fixReliable ? smoothed : rawPoint,
             approachMeters: math.max(_lapApproachMeters, pos.accuracy),
@@ -1013,6 +1125,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
         if (_lastGpsPoint != null && _lastGpsTime != null) {
           final elapsedSec = now.difference(_lastGpsTime!).inMilliseconds / 1000.0;
+          // 센서는 살아 있는데 걸음이 없으면 제자리 — GPS가 몇 m 흔들려도 거리는 그대로.
+          // 기준점은 계속 갱신해 흔들림이 쌓이지 않게 한다 (책상 위에서 0.01km가 나오던 문제)
+          if (isStationary(accelAlive: _accelAlive, stepsAlive: _stepsAlive)) {
+            final nowWall = DateTime.now();
+            if (nowWall.difference(_lastStationaryLogAt).inSeconds >= 15) {
+              _lastStationaryLogAt = nowWall;
+              FileLogger.instance.log(
+                '[GPS] 제자리(걸음 없음) acc=${pos.accuracy.toStringAsFixed(1)}m → 거리 미반영',
+              );
+            }
+            _lastGpsPoint = rawPoint;
+            _lastGpsTime = now;
+            _stepsAtLastGpsFix = _totalSteps;
+            _lastGpsFixAccuracy = pos.accuracy;
+            setState(() {
+              _mapCenter = smoothed;
+              _hasLocation = true;
+            });
+            return;
+          }
           final stride = _calibratedStrideMeters;
           // 이 구간의 직선거리를 믿으려면 양 끝 좌표가 모두 정확하고 간격이 짧아야 함
           // (9/12 19:11:43: 저정밀 좌표 다음 정밀 좌표가 오자 "2초에 90m"로 계산됐음)
@@ -1080,11 +1212,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           } else if (degraded) {
             final plausible = _referenceSpeedMps * _degradedSpeedTolerance * elapsedSec;
             if (cappedMeters > plausible) cappedMeters = plausible;
+            // 보폭을 아직 모를 때는 걸음 수로 설명 가능한 거리까지만 인정
+            // (10/23: 걸음당 1.1~1.5m로 부풀었음)
+            final bound = stepBoundMeters(stepsDelta, maxStrideMeters: _strideBoundForCadence);
+            if (cappedMeters > bound) cappedMeters = bound;
           } else {
             // 정밀 구간이라도 걸음 수로 설명되지 않는 튐은 자른다 (보폭의 1.6배 + 1.5m 여유)
             if (stride != null && _stepsAlive) {
               final stepCap = stepsDelta * stride * 1.6 + 1.5;
               if (cappedMeters > stepCap) cappedMeters = stepCap;
+            } else if (stride == null) {
+              final bound = stepBoundMeters(stepsDelta, maxStrideMeters: _strideBoundForCadence);
+              if (cappedMeters > bound) cappedMeters = bound;
             }
             if (pos.accuracy <= _speedRefMaxAccuracyMeters) {
               final mps = meters / elapsedSec;
@@ -1102,6 +1241,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               if (perStep >= 0.3 && perStep <= 1.6) {
                 _strideCalMeters += meters;
                 _strideCalSteps += stepsDelta;
+                // 케이던스별로 저장해 다음 러닝은 시작부터 이 보폭을 쓴다
+                _strideModel.observe(_liveCadenceSpm.toDouble(), meters, stepsDelta);
               }
             }
           }
@@ -1111,7 +1252,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             'speed=${speedKmh.toStringAsFixed(1)}km/h '
             '${useSteps ? "걸음기반 ${stepsDelta}보->${cappedMeters.toStringAsFixed(1)}m (gps=${meters.toStringAsFixed(1)}m)" : cappedMeters < meters - 0.05 ? "capped ${meters.toStringAsFixed(1)}m->${cappedMeters.toStringAsFixed(1)}m" : "meters=${meters.toStringAsFixed(1)}m"} '
             '${degraded && !useSteps ? "기준속도=${(_referenceSpeedMps * 3.6).toStringAsFixed(1)}km/h " : ""}'
-            '보폭=${calStride == null ? "학습중($_strideCalSteps보)" : "${(calStride * 100).toStringAsFixed(1)}cm"} '
+            '보폭=${calStride == null ? "학습중($_strideCalSteps보)" : "${(calStride * 100).toStringAsFixed(1)}cm${_strideCalSteps >= _minStrideCalSteps ? "" : "(저장값)"}"} '
             '누적거리=${_distanceKm.toStringAsFixed(3)}km 수락=$_gpsAcceptedTotal개 거부=$_gpsRejectedTotal개',
           );
 
@@ -1211,6 +1352,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       FileLogger.instance.log(
         '[LAP] 기준점 설정 (acc=${accuracyMeters.toStringAsFixed(1)}m)',
       );
+      _seedLapFromMemory(point, '기준점');
     }
     final distFromStart = Geolocator.distanceBetween(
       _lapStartPoint!.latitude, _lapStartPoint!.longitude,
@@ -1292,6 +1434,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         sinceLapMeters > 100 &&
         sinceLapMeters < 2000) {
       _reliableLapMeters.add(sinceLapMeters);
+      _saveLapMemory();
       FileLogger.instance.log(
         '[LAP] 한 바퀴 거리 학습 ${sinceLapMeters.toStringAsFixed(0)}m '
         '(중앙값=${_learnedLapMeters!.toStringAsFixed(0)}m, 표본 ${_reliableLapMeters.length}개)',
@@ -1391,6 +1534,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _snapshotTimer?.cancel();
     _metronome.stop();
     _applyWakelock(false);
+    _strideModel.save();
     setState(() => _workoutState = WorkoutState.idle);
     _announceWorkoutSummary();
     // 정상 종료로 DB에 저장되므로 복구용 스냅샷은 더 이상 필요 없음
