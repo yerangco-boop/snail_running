@@ -19,6 +19,8 @@ class Tokens {
   static const ink = Color(0xFF111111);
   // 보조 글자 (5.4:1)
   static const inkMuted = Color(0xFF6A6762);
+  // 주행 화면 보조 글자 (8.1:1, 주행 7:1 기준 통과)
+  static const inkSoft = Color(0xFF4F4B52);
 
   static const danger = Color(0xFFD32F2F);
   static const warnFace = Color(0xFFFFE3A8);

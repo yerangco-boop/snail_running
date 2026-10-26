@@ -146,7 +146,7 @@ class HistoryScreenState extends State<HistoryScreen> {
           const SizedBox(height: 4),
           Text(value,
               style: TextStyle(
-                  fontSize: 15, fontWeight: FontWeight.w600, color: accent)),
+                  fontSize: 15, fontWeight: FontWeight.w600, color: Tokens.coralText)),
         ],
       );
 

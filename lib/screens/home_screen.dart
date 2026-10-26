@@ -581,7 +581,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('복구', style: TextStyle(color: _s.accent, fontSize: 16)),
+            child: Text('복구', style: TextStyle(color: Tokens.coralText, fontSize: 16)),
           ),
         ],
       ),
@@ -639,7 +639,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('업데이트', style: TextStyle(color: _s.accent, fontSize: 16)),
+            child: Text('업데이트', style: TextStyle(color: Tokens.coralText, fontSize: 16)),
           ),
         ],
       ),
@@ -664,7 +664,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('계속 달리기', style: TextStyle(color: _s.accent, fontSize: 16)),
+            child: Text('계속 달리기', style: TextStyle(color: Tokens.coralText, fontSize: 16)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
@@ -1611,7 +1611,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     icon: Icon(Icons.play_circle_outline,
                         size: 18, color: _s.accent),
                     label: Text("김병곤 스트레칭 보기",
-                        style: TextStyle(color: _s.accent)),
+                        style: TextStyle(color: Tokens.coralText)),
                   ),
                 ),
               ],
@@ -1623,7 +1623,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 Navigator.pop(context);
                 _resetWorkout();
               },
-              child: Text("확인", style: TextStyle(color: _s.accent, fontSize: 16)),
+              child: Text("확인", style: TextStyle(color: Tokens.coralText, fontSize: 16)),
             ),
           ],
         ),
@@ -1976,7 +1976,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 end: Alignment.bottomCenter,
                 colors: [
                   _s.preset.runGradient[0].withValues(alpha: 0.90),
-                  _s.preset.runGradient[1].withValues(alpha: 0.55),
+                  _s.preset.runGradient[1].withValues(alpha: 0.80),
                   _s.preset.runGradient[2].withValues(alpha: 0.93),
                 ],
                 stops: const [0.0, 0.5, 1.0],
@@ -2017,7 +2017,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             child: Text(
                               "일시정지",
                               style: TextStyle(
-                                  color: _s.preset.accent,
+                                  color: Tokens.ink,
                                   fontSize: 12,
                                   letterSpacing: 3),
                             ),
@@ -2045,9 +2045,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 _mainDisplayLabels[_mainDisplayMode],
                                 style: TextStyle(
                                   fontSize: 22,
-                                  color: _s.preset.onRun.withValues(alpha: 0.3),
+                                  color: Tokens.inkSoft,
                                   letterSpacing: 10,
-                                  fontWeight: FontWeight.w200,
+                                  fontWeight: FontWeight.w400,
                                 ),
                               ),
                               const SizedBox(height: 14),
@@ -2101,7 +2101,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     '지도 © OpenStreetMap contributors',
                     style: TextStyle(
                       fontSize: 10,
-                      color: _s.preset.onRun.withValues(alpha: 0.45),
+                      color: Tokens.inkMuted,
                     ),
                   ),
                 ),
@@ -2201,9 +2201,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
-          color: on
-              ? _s.preset.accent.withValues(alpha: 0.18)
-              : onRun.withValues(alpha: 0.08),
+          color: Tokens.card,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: on
@@ -2217,7 +2215,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             Icon(
               on ? Icons.music_note_rounded : Icons.music_off_rounded,
               size: 15,
-              color: on ? _s.preset.accent : onRun.withValues(alpha: 0.5),
+              color: on ? Tokens.coralText : Tokens.inkSoft,
             ),
             const SizedBox(width: 6),
             Text(
@@ -2225,7 +2223,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: on ? _s.preset.accent : onRun.withValues(alpha: 0.5),
+                color: on ? Tokens.ink : Tokens.inkSoft,
               ),
             ),
           ],
@@ -2235,20 +2233,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _metricItem(String label, String value) {
-    final onRun = _s.preset.onRun;
     return Column(
       children: [
         Text(label,
             style: TextStyle(
                 fontSize: 11,
-                color: onRun.withValues(alpha: 0.5),
+                color: Tokens.inkSoft,
                 letterSpacing: 1)),
         const SizedBox(height: 4),
         Text(value,
             style: TextStyle(
               fontSize: 19,
-              color: onRun.withValues(alpha: 0.75),
-              fontWeight: FontWeight.w300,
+              color: Tokens.ink,
+              fontWeight: FontWeight.w600,
             )),
       ],
     );

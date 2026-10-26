@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import '../theme/tokens.dart';
 import '../models/app_settings.dart';
 import '../models/workout_record.dart';
 import '../utils/route_utils.dart';
@@ -309,7 +310,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                               style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
-                                  color: _accent)),
+                                  color: Tokens.coralText)),
                           if (i == fastest)
                             Padding(
                               padding: const EdgeInsets.only(left: 3),

@@ -90,7 +90,7 @@ class _SnailRunningAppState extends State<SnailRunningApp> {
           indicatorColor: accent.withValues(alpha: 0.28),
           labelTextStyle: WidgetStateProperty.resolveWith((states) {
             if (states.contains(WidgetState.selected)) {
-              return TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600);
+              return const TextStyle(color: Tokens.coralText, fontSize: 12, fontWeight: FontWeight.w600);
             }
             return TextStyle(color: grey, fontSize: 12);
           }),

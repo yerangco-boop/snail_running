@@ -299,7 +299,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.music_note_outlined,
               label: "메트로놈 BPM",
               trailing: Text("${_s.bpm} BPM",
-                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: Tokens.coralText, fontWeight: FontWeight.bold)),
               onTap: _showBpmPicker,
             ),
             const SizedBox(height: 8),
@@ -308,7 +308,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.flag_outlined,
               label: "목표 거리",
               trailing: Text("${_s.targetDistanceKm.toStringAsFixed(1)} km",
-                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: Tokens.coralText, fontWeight: FontWeight.bold)),
               onTap: _showDistancePicker,
             ),
             const SizedBox(height: 8),
@@ -318,7 +318,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               label: "목표 페이스",
               trailing: Text(
                 "${_s.paceMinutes}:${_s.paceSeconds.toString().padLeft(2, '0')} /km",
-                style: TextStyle(color: _accent, fontWeight: FontWeight.bold),
+                style: TextStyle(color: Tokens.coralText, fontWeight: FontWeight.bold),
               ),
               onTap: _showPacePicker,
             ),
@@ -332,7 +332,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.monitor_weight_outlined,
               label: "체중 (칼로리 계산용)",
               trailing: Text("${_s.weightKg.toStringAsFixed(1)} kg",
-                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: Tokens.coralText, fontWeight: FontWeight.bold)),
               onTap: _showWeightPicker,
             ),
             const SizedBox(height: 8),
@@ -359,7 +359,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               trailing: Text(
                 _s.ttsVoiceName ?? "자동",
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: _accent, fontWeight: FontWeight.bold),
+                style: TextStyle(color: Tokens.coralText, fontWeight: FontWeight.bold),
               ),
               onTap: _showVoicePicker,
             ),
@@ -483,7 +483,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             TextButton(
               onPressed: () => _update(() => _s.bpm = bpm),
               child: Text('맞추기',
-                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: Tokens.coralText, fontWeight: FontWeight.bold)),
             ),
         ],
       ),
@@ -551,7 +551,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 color: _accent,
               ),
               label: Text(_testingMetronome ? '재생 중…' : '소리 테스트',
-                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: Tokens.coralText, fontWeight: FontWeight.bold)),
             ),
           ),
         ],
@@ -608,7 +608,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     style: TextStyle(fontSize: 16, color: _s.preset.onBackground)),
               ),
               Text("$percent%",
-                  style: TextStyle(color: _accent, fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: Tokens.coralText, fontWeight: FontWeight.bold)),
             ],
           ),
           Slider(
@@ -1047,7 +1047,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               });
               Navigator.pop(context);
             },
-            child: Text("확인", style: TextStyle(color: _accent)),
+            child: Text("확인", style: TextStyle(color: Tokens.coralText)),
           ),
         ],
       ),
@@ -1101,7 +1101,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _update(() => _s.weightKg = minKg + selectedIndex * step);
               Navigator.pop(context);
             },
-            child: Text("확인", style: TextStyle(color: _accent)),
+            child: Text("확인", style: TextStyle(color: Tokens.coralText)),
           ),
         ],
       ),
@@ -1134,7 +1134,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _update(() => _s.targetDistanceKm = minKm + selectedIndex * step);
               Navigator.pop(context);
             },
-            child: Text("확인", style: TextStyle(color: _accent)),
+            child: Text("확인", style: TextStyle(color: Tokens.coralText)),
           ),
         ],
       ),
@@ -1184,7 +1184,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               });
               Navigator.pop(context);
             },
-            child: Text("확인", style: TextStyle(color: _accent)),
+            child: Text("확인", style: TextStyle(color: Tokens.coralText)),
           ),
         ],
       ),
