@@ -1,0 +1,32 @@
+{
+  "run": {
+    "frames": 75,
+    "fps": 15,
+    "width": 391,
+    "height": 480,
+    "loop": 0,
+    "avgBodyHeightRatio": 0.936,
+    "bytes": 1561758,
+    "readBackFrames": 75
+  },
+  "cheer": {
+    "frames": 75,
+    "fps": 15,
+    "width": 321,
+    "height": 480,
+    "loop": 1,
+    "avgBodyHeightRatio": 0.766,
+    "bytes": 1308538,
+    "readBackFrames": 75
+  },
+  "fail": {
+    "frames": 120,
+    "fps": 15,
+    "width": 489,
+    "height": 480,
+    "loop": 1,
+    "avgBodyHeightRatio": 0.851,
+    "bytes": 2359626,
+    "readBackFrames": 120
+  }
+}

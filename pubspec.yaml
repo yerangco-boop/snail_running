@@ -49,6 +49,8 @@ flutter:
     - assets/sounds/
     - assets/icon/
     - assets/images/
+    - assets/snail/
+    - assets/ui/
 
 flutter_launcher_icons:
   android: true
