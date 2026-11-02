@@ -22,6 +22,8 @@ import '../services/background_permissions.dart';
 import '../services/workout_snapshot.dart';
 import '../services/update_checker.dart';
 import '../utils/route_utils.dart';
+import '../utils/streak.dart';
+import '../widgets/home/pre_run_view.dart';
 
 enum WorkoutState { idle, countdown, running, paused }
 
@@ -41,6 +43,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   WorkoutState _workoutState = WorkoutState.idle;
+  int _streakDays = 0; // 홈 화면 '연속 러닝' 카드용 (이력 DB에서 계산)
   double _distanceKm = 0.0;
   int _seconds = 0;
   int _countdownValue = 3;
@@ -384,6 +387,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _reverseGeocode();
       _fetchWeather();
     });
+    _loadStreak();
+  }
+
+  Future<void> _loadStreak() async {
+    try {
+      final records = await DatabaseService.instance.getWorkouts();
+      final days = computeStreakDays(records.map((r) => r.date), DateTime.now());
+      if (mounted && days != _streakDays) setState(() => _streakDays = days);
+    } catch (_) {
+      // 웹처럼 DB가 없는 환경에서는 연속 카드를 그냥 숨김
+    }
   }
 
   @override
@@ -1426,6 +1440,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       lapSplitDistanceKm: List<double>.from(_lapSplitDistanceKm),
     );
     await DatabaseService.instance.insertWorkout(record);
+    _loadStreak();
   }
 
   void _launchTimer() {
@@ -1708,146 +1723,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // │  1. 시작 전 화면 — 테마 배경색, 지도 없음               │
   // └────────────────────────────────────────────────────────┘
   Widget _buildPreRunScreen() {
-    return Scaffold(
-      backgroundColor: _s.preset.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // 상단 바 (설정 아이콘을 뺀 뒤에도 예전 높이를 유지)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-              child: Row(
-                children: [
-                  Text(
-                    "달팽이 러닝",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: _s.preset.onBackground,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // 백그라운드 위치 권한 경고 — 이게 "항상 허용"이 아니면 화면이 꺼지는 순간
-            // 위치 스트림이 끊겨 거리가 통째로 유실됨(v17까지의 -7.9~-54.7% 오차 원인)
-            if (!_hasAlwaysLocation) _buildPermissionBanner(),
-
-            // 지역 + 날씨 요약 (실제 위치 기준 — 지명을 함께 표시해 신뢰도 확인 가능)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(
-                    _weatherLoading
-                        ? '위치 확인 중...'
-                        : '${_weather?.fetchedAtText ?? ''}${_locationName != null ? ' · $_locationName' : ''}',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: _s.preset.onBackground.withValues(alpha: 0.92),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _weatherLoading
-                        ? '날씨 확인 중...'
-                        : (_weather?.summaryText ?? '날씨 정보 없음'),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: _s.preset.onBackground.withValues(alpha: 0.8),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const Spacer(flex: 3),
-
-            // 목표 표시 (탭하여 변경)
-            GestureDetector(
-              onTap: _showGoalSheet,
-              child: Column(
-                children: [
-                  Text(
-                    _s.goalType == GoalType.distance ? '목표 거리' : '목표 시간',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: _s.preset.onBackgroundMuted,
-                      letterSpacing: 3,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  ShaderMask(
-                    shaderCallback: (bounds) => LinearGradient(
-                      colors: [_s.preset.accentGradientStart, _s.preset.accentGradientEnd],
-                    ).createShader(bounds),
-                    child: Text(
-                      _s.goalType == GoalType.distance
-                          ? _s.targetDistanceKm.toStringAsFixed(1)
-                          : '${_s.targetTimeMinutes}',
-                      style: const TextStyle(
-                        fontSize: 96,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        height: 1.0,
-                        letterSpacing: -4,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _s.goalType == GoalType.distance ? 'km' : '분',
-                    style: TextStyle(
-                      fontSize: 20,
-                      color: _s.preset.onBackgroundMuted,
-                      letterSpacing: 6,
-                      fontWeight: FontWeight.w300,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: _s.preset.onBackground.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: _s.preset.onBackground.withValues(alpha: 0.12)),
-                    ),
-                    child: Text(
-                      "탭하여 목표 변경",
-                      style: TextStyle(fontSize: 12, color: _s.preset.onBackgroundMuted),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const Spacer(flex: 4),
-
-            // 시작 버튼 (큰 원형)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 52),
-              child: GestureDetector(
-                onTap: _startCountdown,
-                child: Container(
-                  width: 88,
-                  height: 88,
-                  decoration: _coralButtonDecoration(),
-                  child: const Center(
-                    child: Icon(Icons.play_arrow_rounded, size: 52, color: Tokens.ink),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return PreRunView(
+      placeText: _weatherLoading
+          ? '위치 확인 중...'
+          : '${_weather?.fetchedAtText ?? ''}${_locationName != null ? ' · $_locationName' : ''}',
+      weather: _weatherLoading ? null : _weather,
+      weatherFallbackText: _weatherLoading ? '날씨 확인 중...' : '날씨 정보 없음',
+      isDistanceGoal: _s.goalType == GoalType.distance,
+      goalValueText: _s.goalType == GoalType.distance
+          ? _s.targetDistanceKm.toStringAsFixed(1)
+          : '${_s.targetTimeMinutes}',
+      streakDays: _streakDays,
+      onGoalTap: _showGoalSheet,
+      onStart: _startCountdown,
+      // 백그라운드 위치 권한 경고 — 이게 "항상 허용"이 아니면 화면이 꺼지는 순간
+      // 위치 스트림이 끊겨 거리가 통째로 유실됨(v17까지의 -7.9~-54.7% 오차 원인)
+      permissionBanner: _hasAlwaysLocation ? null : _buildPermissionBanner(),
     );
   }
 

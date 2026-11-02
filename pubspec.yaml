@@ -48,7 +48,6 @@ flutter:
   assets:
     - assets/sounds/
     - assets/icon/
-    - assets/images/
     - assets/snail/
     - assets/ui/
 

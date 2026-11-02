@@ -44,14 +44,17 @@ class _MainScreenState extends State<MainScreen> {
         ],
       ),
       bottomNavigationBar: Container(
-        decoration: BoxDecoration(
+        // 점토 판처럼 위로 살짝 솟은 탭바 (C안 시안)
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topRight,
-            end: Alignment.bottomLeft,
-            colors: _s.preset.cardGradient,
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFFFFDF8), Color(0xFFF8EBD7)],
           ),
-          border: Border(top: BorderSide(color: _s.preset.cardBorder)),
-          boxShadow: _s.preset.cardShadow,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+          boxShadow: [
+            BoxShadow(color: Color(0x4D7D5023), blurRadius: 22, spreadRadius: -8, offset: Offset(0, -12)),
+          ],
         ),
         child: NavigationBar(
           selectedIndex: _tabIndex,
