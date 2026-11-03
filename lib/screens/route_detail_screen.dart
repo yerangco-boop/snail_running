@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import '../widgets/clay/clay_card.dart';
 import '../theme/tokens.dart';
 import '../models/app_settings.dart';
 import '../models/workout_record.dart';
@@ -91,16 +92,19 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
   Widget _buildMapCard() {
     final record = widget.record;
     if (!record.hasRoute) {
-      return Container(
+      return const SizedBox(
         height: 160,
-        alignment: Alignment.center,
-        decoration: _cardDecoration(),
-        child: Text('경로 정보 없음',
-            style: TextStyle(color: _p.onBackgroundMuted, fontSize: 15)),
+        child: ClayCard(
+          radius: 24,
+          child: Center(
+            child: Text('경로 정보 없음',
+                style: TextStyle(color: Tokens.inkMuted, fontSize: 15)),
+          ),
+        ),
       );
     }
     return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(24),
       child: SizedBox(
         height: 300,
         child: FlutterMap(
@@ -111,9 +115,12 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
           ),
           children: [
             TileLayer(
-              urlTemplate:
-                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'snail_running',
+              tileBuilder: (context, tileWidget, tile) => ColorFiltered(
+                colorFilter: kMutedMapFilter,
+                child: tileWidget,
+              ),
             ),
             // 지도 출처 표시 — OpenStreetMap(ODbL) 표기가 이용 조건임.
             // 화면을 가리지 않도록 오른쪽 아래 ⓘ 버튼을 눌렀을 때만 펼쳐지는 방식
@@ -124,8 +131,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
               ],
             ),
             PolylineLayer(
-              polylines: [buildRoutePolyline(record.routePoints!, _accent)],
-            ),
+                polylines: buildClayRoutePolylines(record.routePoints!)),
             MarkerLayer(
               markers: [
                 for (final m in computeKmMarkers(record.routePoints!))
@@ -153,8 +159,8 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                   point: record.routePoints!.last,
                   width: 30,
                   height: 30,
-                  child:
-                      buildRouteEndpointMarker(Icons.sports_score_rounded, _accent),
+                  child: buildRouteEndpointMarker(
+                      Icons.sports_score_rounded, _accent),
                 ),
               ],
             ),
@@ -167,9 +173,9 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
   // ── 통계 ──────────────────────────────────────────────────────────────────
   Widget _buildStatsCard() {
     final r = widget.record;
-    return Container(
+    return ClayCard(
+      radius: 24,
       padding: const EdgeInsets.all(20),
-      decoration: _cardDecoration(),
       child: Column(
         children: [
           Row(
@@ -187,8 +193,8 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
               ),
               Padding(
                 padding: const EdgeInsets.only(left: 6, bottom: 6),
-                child: Text('km',
-                    style: TextStyle(fontSize: 16, color: _p.grey)),
+                child:
+                    Text('km', style: TextStyle(fontSize: 16, color: _p.grey)),
               ),
             ],
           ),
@@ -201,7 +207,8 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
           _statRow('시간', r.formattedDuration),
           _statRow('평균 페이스', '${r.formattedPace}/km'),
           _statRow('평균 케이던스', '${r.avgCadence} spm'),
-          if (r.totalSteps > 0) _statRow('총 걸음 수', '${_formatSteps(r.totalSteps)} 보'),
+          if (r.totalSteps > 0)
+            _statRow('총 걸음 수', '${_formatSteps(r.totalSteps)} 보'),
           _statRow('칼로리', '${r.caloriesBurned.toStringAsFixed(0)} kcal'),
           if (r.lapCount > 0) _statRow('바퀴 수', '${r.lapCount}바퀴'),
           _statRow('당시 날씨', r.weatherSummary),
@@ -235,7 +242,8 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
     // 랩 완료 시점의 실측 GPS 누적 거리 / 구간 거리. v21 이전 기록에는 없어서 비어 있음
     final cumKm = r.lapSplitDistanceKm ?? const <double>[];
     final intervalKm = r.lapIntervalKm;
-    final hasDistance = cumKm.length == intervals.length && intervals.isNotEmpty;
+    final hasDistance =
+        cumKm.length == intervals.length && intervals.isNotEmpty;
 
     // 가장 빠른/느린 랩을 찾아 강조 (랩이 2개 이상이고 서로 다를 때만 의미 있음)
     var fastest = -1, slowest = -1;
@@ -243,15 +251,23 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
       var minV = intervals[0], maxV = intervals[0];
       fastest = slowest = 0;
       for (var i = 1; i < intervals.length; i++) {
-        if (intervals[i] < minV) { minV = intervals[i]; fastest = i; }
-        if (intervals[i] > maxV) { maxV = intervals[i]; slowest = i; }
+        if (intervals[i] < minV) {
+          minV = intervals[i];
+          fastest = i;
+        }
+        if (intervals[i] > maxV) {
+          maxV = intervals[i];
+          slowest = i;
+        }
       }
-      if (minV == maxV) { fastest = slowest = -1; }
+      if (minV == maxV) {
+        fastest = slowest = -1;
+      }
     }
 
-    return Container(
+    return ClayCard(
+      radius: 24,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: _cardDecoration(),
       child: Column(
         children: [
           Row(
@@ -259,22 +275,26 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
               SizedBox(
                 width: 34,
                 child: Text('랩',
-                    style: TextStyle(fontSize: 11, color: _p.grey, letterSpacing: 1)),
+                    style: TextStyle(
+                        fontSize: 11, color: _p.grey, letterSpacing: 1)),
               ),
               Expanded(
                 child: Text('누적 거리',
                     textAlign: TextAlign.right,
-                    style: TextStyle(fontSize: 11, color: _p.grey, letterSpacing: 1)),
+                    style: TextStyle(
+                        fontSize: 11, color: _p.grey, letterSpacing: 1)),
               ),
               Expanded(
                 child: Text('구간 시간',
                     textAlign: TextAlign.right,
-                    style: TextStyle(fontSize: 11, color: _p.grey, letterSpacing: 1)),
+                    style: TextStyle(
+                        fontSize: 11, color: _p.grey, letterSpacing: 1)),
               ),
               Expanded(
                 child: Text('구간 페이스',
                     textAlign: TextAlign.right,
-                    style: TextStyle(fontSize: 11, color: _p.grey, letterSpacing: 1)),
+                    style: TextStyle(
+                        fontSize: 11, color: _p.grey, letterSpacing: 1)),
               ),
             ],
           ),
@@ -328,7 +348,9 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                     ),
                     Expanded(
                       child: Text(
-                        hasDistance ? '${cumKm[i].toStringAsFixed(2)} km' : '--',
+                        hasDistance
+                            ? '${cumKm[i].toStringAsFixed(2)} km'
+                            : '--',
                         textAlign: TextAlign.right,
                         style: TextStyle(fontSize: 14, color: _p.onBackground),
                       ),
@@ -399,16 +421,5 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
             fontWeight: FontWeight.w600,
           ),
         ),
-      );
-
-  BoxDecoration _cardDecoration() => BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: _p.cardGradient,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _p.cardBorder),
-        boxShadow: _p.cardShadow,
       );
 }

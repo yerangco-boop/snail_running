@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../widgets/clay/clay_card.dart';
+import '../widgets/snail_animation.dart';
 import '../theme/tokens.dart';
 import '../models/app_settings.dart';
 import '../models/workout_record.dart';
@@ -46,7 +48,6 @@ class HistoryScreenState extends State<HistoryScreen> {
     await reload();
   }
 
-
   // 선택한 기간의 [시작, 끝) — 전체면 null. 주는 월요일 시작
   (DateTime, DateTime)? _periodRange() {
     final now = DateTime.now();
@@ -54,13 +55,19 @@ class HistoryScreenState extends State<HistoryScreen> {
       case _Period.week:
         final monday = DateTime(now.year, now.month, now.day)
             .subtract(Duration(days: now.weekday - 1));
-        final start = DateTime(monday.year, monday.month, monday.day + 7 * _offset);
+        final start =
+            DateTime(monday.year, monday.month, monday.day + 7 * _offset);
         return (start, DateTime(start.year, start.month, start.day + 7));
       case _Period.month:
-        return (DateTime(now.year, now.month + _offset, 1),
-            DateTime(now.year, now.month + _offset + 1, 1));
+        return (
+          DateTime(now.year, now.month + _offset, 1),
+          DateTime(now.year, now.month + _offset + 1, 1)
+        );
       case _Period.year:
-        return (DateTime(now.year + _offset, 1, 1), DateTime(now.year + _offset + 1, 1, 1));
+        return (
+          DateTime(now.year + _offset, 1, 1),
+          DateTime(now.year + _offset + 1, 1, 1)
+        );
       case _Period.all:
         return null;
     }
@@ -88,7 +95,9 @@ class HistoryScreenState extends State<HistoryScreen> {
     switch (_period) {
       case _Period.week:
         final last = range.$2.subtract(const Duration(days: 1));
-        final endText = last.month == start.month ? '${last.day}일' : '${last.month}월 ${last.day}일';
+        final endText = last.month == start.month
+            ? '${last.day}일'
+            : '${last.month}월 ${last.day}일';
         return '${start.month}월 ${start.day}일 – $endText';
       case _Period.month:
         return '${start.year}년 ${start.month}월';
@@ -133,14 +142,18 @@ class HistoryScreenState extends State<HistoryScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 11),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: _period == p ? Tokens.coralFace : Colors.transparent,
+                          color: _period == p
+                              ? Tokens.coralFace
+                              : Colors.transparent,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           labels[p]!,
                           style: TextStyle(
                             fontSize: 15,
-                            fontWeight: _period == p ? FontWeight.w700 : FontWeight.w500,
+                            fontWeight: _period == p
+                                ? FontWeight.w700
+                                : FontWeight.w500,
                             color: _period == p ? Tokens.ink : Tokens.inkMuted,
                           ),
                         ),
@@ -157,7 +170,8 @@ class HistoryScreenState extends State<HistoryScreen> {
                 if (_period != _Period.all)
                   IconButton(
                     tooltip: '이전',
-                    onPressed: _canGoPrev ? () => setState(() => _offset--) : null,
+                    onPressed:
+                        _canGoPrev ? () => setState(() => _offset--) : null,
                     icon: const Icon(Icons.chevron_left_rounded),
                     color: Tokens.ink,
                     disabledColor: Tokens.ink.withValues(alpha: 0.25),
@@ -169,13 +183,16 @@ class HistoryScreenState extends State<HistoryScreen> {
                     _rangeLabel,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w600, color: Tokens.ink),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Tokens.ink),
                   ),
                 ),
                 if (_period != _Period.all)
                   IconButton(
                     tooltip: '다음',
-                    onPressed: _offset < 0 ? () => setState(() => _offset++) : null,
+                    onPressed:
+                        _offset < 0 ? () => setState(() => _offset++) : null,
                     icon: const Icon(Icons.chevron_right_rounded),
                     color: Tokens.ink,
                     disabledColor: Tokens.ink.withValues(alpha: 0.25),
@@ -237,8 +254,8 @@ class HistoryScreenState extends State<HistoryScreen> {
                       : ListView.builder(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                           itemCount: _records.length,
-                          itemBuilder: (_, i) =>
-                              _buildCard(_records[i], preset, accent, surface, grey),
+                          itemBuilder: (_, i) => _buildCard(
+                              _records[i], preset, accent, surface, grey),
                         ),
             ),
           ],
@@ -257,36 +274,29 @@ class HistoryScreenState extends State<HistoryScreen> {
     final avgS = avgPace.toInt() % 60;
     final dividerColor = preset.onSurface.withValues(alpha: 0.12);
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: preset.cardGradient,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: ClayCard(
+        radius: 24,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _summaryItem(
+                "총 거리", "${totalKm.toStringAsFixed(1)} km", accent, grey),
+            Container(width: 1, height: 28, color: dividerColor),
+            _summaryItem("총 시간", _fmtSec(totalSec), accent, grey),
+            Container(width: 1, height: 28, color: dividerColor),
+            _summaryItem(
+              "평균 페이스",
+              avgPace > 0
+                  ? "$avgM'${avgS.toString().padLeft(2, '0')}\"/km"
+                  : "--",
+              accent,
+              grey,
+            ),
+          ],
         ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: preset.cardBorder),
-        boxShadow: preset.cardShadow,
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _summaryItem(
-              "총 거리", "${totalKm.toStringAsFixed(1)} km", accent, grey),
-          Container(width: 1, height: 28, color: dividerColor),
-          _summaryItem("총 시간", _fmtSec(totalSec), accent, grey),
-          Container(width: 1, height: 28, color: dividerColor),
-          _summaryItem(
-            "평균 페이스",
-            avgPace > 0
-                ? "$avgM'${avgS.toString().padLeft(2, '0')}\"/km"
-                : "--",
-            accent,
-            grey,
-          ),
-        ],
       ),
     );
   }
@@ -299,7 +309,9 @@ class HistoryScreenState extends State<HistoryScreen> {
           const SizedBox(height: 4),
           Text(value,
               style: TextStyle(
-                  fontSize: 15, fontWeight: FontWeight.w600, color: Tokens.coralText)),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Tokens.coralText)),
         ],
       );
 
@@ -343,7 +355,7 @@ class HistoryScreenState extends State<HistoryScreen> {
         if (record.id != null) _delete(record.id!);
       },
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
@@ -353,91 +365,84 @@ class HistoryScreenState extends State<HistoryScreen> {
             ),
           ),
         ),
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topRight,
-              end: Alignment.bottomLeft,
-              colors: preset.cardGradient,
-            ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: preset.cardBorder),
-            boxShadow: preset.cardShadow,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 날짜 + 요일
-              Text(
-                "${record.formattedDate} (${record.weekday})",
-                style: TextStyle(fontSize: 13, color: grey),
-              ),
-              const SizedBox(height: 12),
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: ClayCard(
+            radius: 24,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 날짜 + 요일
+                Text(
+                  "${record.formattedDate} (${record.weekday})",
+                  style: TextStyle(fontSize: 13, color: grey),
+                ),
+                const SizedBox(height: 12),
 
-              // 거리 (크게)
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    record.distanceKm.toStringAsFixed(2),
-                    style: TextStyle(
-                      fontSize: 44,
-                      fontWeight: FontWeight.w700,
-                      color: Tokens.coralDisplay,
-                      height: 1.0,
+                // 거리 (크게)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      record.distanceKm.toStringAsFixed(2),
+                      style: TextStyle(
+                        fontSize: 44,
+                        fontWeight: FontWeight.w700,
+                        color: Tokens.coralDisplay,
+                        height: 1.0,
+                      ),
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 6, bottom: 5),
-                    child:
-                        Text("km", style: TextStyle(fontSize: 16, color: grey)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6, bottom: 5),
+                      child: Text("km",
+                          style: TextStyle(fontSize: 16, color: grey)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
 
-              // 시간·페이스·케이던스·칼로리·바퀴 — Row는 폭이 모자라면 카드 밖으로
-              // 넘쳐서(15바퀴 칩이 오른쪽으로 잘림) Wrap으로 자동 줄바꿈되게 함
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  _statChip(Icons.timer_outlined, record.formattedDuration,
-                      surface, grey),
-                  _statChip(Icons.speed_outlined, "${record.formattedPace}/km",
-                      surface, grey),
-                  _statChip(Icons.directions_walk_outlined,
-                      "${record.avgCadence} spm", surface, grey),
-                  _statChip(
-                      Icons.local_fire_department_outlined,
-                      "${record.caloriesBurned.toStringAsFixed(0)} kcal",
-                      surface,
-                      grey),
-                  if (record.lapCount > 0)
-                    _statChip(Icons.replay_circle_filled_outlined,
-                        "${record.lapCount}바퀴", surface, grey),
-                ],
-              ),
-              const SizedBox(height: 10),
+                // 시간·페이스·케이던스·칼로리·바퀴 — Row는 폭이 모자라면 카드 밖으로
+                // 넘쳐서(15바퀴 칩이 오른쪽으로 잘림) Wrap으로 자동 줄바꿈되게 함
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: [
+                    _statChip(Icons.timer_outlined, record.formattedDuration,
+                        surface, grey),
+                    _statChip(Icons.speed_outlined,
+                        "${record.formattedPace}/km", surface, grey),
+                    _statChip(Icons.directions_walk_outlined,
+                        "${record.avgCadence} spm", surface, grey),
+                    _statChip(
+                        Icons.local_fire_department_outlined,
+                        "${record.caloriesBurned.toStringAsFixed(0)} kcal",
+                        surface,
+                        grey),
+                    if (record.lapCount > 0)
+                      _statChip(Icons.replay_circle_filled_outlined,
+                          "${record.lapCount}바퀴", surface, grey),
+                  ],
+                ),
+                const SizedBox(height: 10),
 
-              // 당시 날씨 스냅샷
-              Row(
-                children: [
-                  Icon(
-                    record.hasWeather
-                        ? Icons.wb_sunny_outlined
-                        : Icons.cloud_off_outlined,
-                    size: 13,
-                    color: grey,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(record.weatherSummary,
-                      style: TextStyle(fontSize: 12, color: grey)),
-                ],
-              ),
-            ],
+                // 당시 날씨 스냅샷
+                Row(
+                  children: [
+                    Icon(
+                      record.hasWeather
+                          ? Icons.wb_sunny_outlined
+                          : Icons.cloud_off_outlined,
+                      size: 13,
+                      color: grey,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(record.weatherSummary,
+                        style: TextStyle(fontSize: 12, color: grey)),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -457,9 +462,7 @@ class HistoryScreenState extends State<HistoryScreen> {
         children: [
           Icon(icon, size: 13, color: grey),
           const SizedBox(width: 5),
-          Text(value,
-              style: TextStyle(
-                  fontSize: 13, color: Tokens.ink)),
+          Text(value, style: TextStyle(fontSize: 13, color: Tokens.ink)),
         ],
       ),
     );
@@ -469,8 +472,7 @@ class HistoryScreenState extends State<HistoryScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.directions_run,
-                size: 72, color: widget.settings.preset.onBackgroundMuted),
+            const SnailAnimation(kind: SnailKind.home, bodyHeight: 140),
             const SizedBox(height: 16),
             Text("아직 운동 기록이 없습니다",
                 style: TextStyle(
