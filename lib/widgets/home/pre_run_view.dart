@@ -100,20 +100,33 @@ class _WeatherRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (placeText.isNotEmpty)
-          Text(placeText, style: const TextStyle(fontSize: 13, color: Tokens.inkMuted)),
+          Row(
+            children: [
+              if (w != null) ...[
+                Image.asset(_conditionAsset(w.iconCode), width: 26, height: 26, excludeFromSemantics: true),
+                const SizedBox(width: 6),
+              ],
+              Flexible(
+                child: Text(placeText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13, color: Tokens.inkMuted)),
+              ),
+            ],
+          ),
         const SizedBox(height: 8),
         if (w == null)
           Text(fallbackText, style: const TextStyle(fontSize: 13, color: Tokens.inkMuted))
         else
           Row(
             children: [
-              _WeatherChip(label: '기온', value: '${w.tempC.round()}°'),
+              _WeatherChip(asset: 'thermometer', label: '기온', value: '${w.tempC.round()}°'),
               const SizedBox(width: 8),
-              _WeatherChip(label: '습도', value: '${w.humidity}%'),
+              _WeatherChip(asset: 'droplet', label: '습도', value: '${w.humidity}%'),
               const SizedBox(width: 8),
-              _WeatherChip(label: '강수', value: '${w.precipitationPercent}%'),
+              _WeatherChip(asset: 'umbrella_with_rain_drops', label: '강수', value: '${w.precipitationPercent}%'),
               const SizedBox(width: 8),
-              _WeatherChip(label: '풍속', value: '${w.windSpeedMs.toStringAsFixed(1)}m/s'),
+              _WeatherChip(asset: 'dashing_away', label: '풍속', value: '${w.windSpeedMs.toStringAsFixed(1)}m/s'),
             ],
           ),
       ],
@@ -121,9 +134,26 @@ class _WeatherRow extends StatelessWidget {
   }
 }
 
-class _WeatherChip extends StatelessWidget {
-  const _WeatherChip({required this.label, required this.value});
+// OpenWeatherMap 아이콘 코드(예: "10d") → Fluent Emoji 3D 날씨 그림
+String _conditionAsset(String code) {
+  final night = code.endsWith('n');
+  final name = switch (code.length >= 2 ? code.substring(0, 2) : '') {
+    '01' => night ? 'crescent_moon' : 'sun',
+    '02' => 'sun_behind_small_cloud',
+    '03' || '04' => 'cloud',
+    '09' || '10' => 'cloud_with_rain',
+    '11' => 'cloud_with_lightning_and_rain',
+    '13' => 'cloud_with_snow',
+    '50' => 'fog',
+    _ => 'sun_behind_small_cloud',
+  };
+  return 'assets/weather/$name.png';
+}
 
+class _WeatherChip extends StatelessWidget {
+  const _WeatherChip({required this.asset, required this.label, required this.value});
+
+  final String asset;
   final String label;
   final String value;
 
@@ -138,6 +168,7 @@ class _WeatherChip extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Image.asset('assets/weather/$asset.png', width: 24, height: 24, excludeFromSemantics: true),
               Text(label, style: const TextStyle(fontSize: 11, color: Tokens.inkMuted)),
               Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Tokens.ink)),
             ],

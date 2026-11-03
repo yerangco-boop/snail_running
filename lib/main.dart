@@ -57,6 +57,7 @@ class _SnailRunningAppState extends State<SnailRunningApp> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
+        fontFamily: 'Pretendard',
         brightness: Brightness.light,
         scaffoldBackgroundColor: background,
         // surface/onSurface를 테마의 채도색(p.surface)이 아니라 근무채색 배경(p.background)에
