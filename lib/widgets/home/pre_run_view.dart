@@ -46,10 +46,11 @@ class PreRunView extends StatelessWidget {
             // 고정 영역(제목·날씨·문구·목표 카드·시작 버튼)의 대략적인 높이를 빼고 남는 만큼만 달팽이에게 줌.
             // 글자 크기를 키운 경우를 위해 시스템 글자 배율도 반영.
             final textScale = MediaQuery.textScalerOf(context).scale(1.0);
-            final compact = constraints.maxHeight < 600;
+            final narrow = constraints.maxWidth < 340;
+            final compact = constraints.maxHeight < 600 || narrow;
             final startSize = constraints.maxHeight >= 700 ? 100.0 : (compact ? 72.0 : 84.0);
             // 낮은 화면에서는 보조 정보인 연속 카드를 접어 목표 카드와 시작 버튼을 우선 보여 줌
-            final showStreak = streakDays > 0 && constraints.maxHeight >= 600;
+            final showStreak = streakDays > 0 && constraints.maxHeight >= 600 && !narrow;
             final fixed = (440 + startSize + (permissionBanner != null ? 92 : 0) + (showStreak ? 80 : 0)) *
                 (1 + (textScale - 1) * 0.6);
             final snailHeight = (constraints.maxHeight - fixed).clamp(compact ? 64.0 : 96.0, 190.0);
