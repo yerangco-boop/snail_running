@@ -40,46 +40,64 @@ class PreRunView extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClayBackground(
       child: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(22, 18, 22, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '달팽이 러닝',
-                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Tokens.ink),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // 화면 높이에 맞춰 달팽이 크기를 줄여 목표 카드·시작 버튼이 첫 화면에 다 들어오게 함.
+            // 고정 영역(제목·날씨·문구·목표 카드·시작 버튼)의 대략적인 높이를 빼고 남는 만큼만 달팽이에게 줌.
+            // 글자 크기를 키운 경우를 위해 시스템 글자 배율도 반영.
+            final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+            final compact = constraints.maxHeight < 600;
+            final startSize = constraints.maxHeight >= 700 ? 100.0 : (compact ? 72.0 : 84.0);
+            // 낮은 화면에서는 보조 정보인 연속 카드를 접어 목표 카드와 시작 버튼을 우선 보여 줌
+            final showStreak = streakDays > 0 && constraints.maxHeight >= 600;
+            final fixed = (440 + startSize + (permissionBanner != null ? 92 : 0) + (showStreak ? 80 : 0)) *
+                (1 + (textScale - 1) * 0.6);
+            final snailHeight = (constraints.maxHeight - fixed).clamp(compact ? 64.0 : 96.0, 190.0);
+            return Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(22, compact ? 8 : 14, 22, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '달팽이 러닝',
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Tokens.ink),
+                        ),
+                        // 배너는 자체 좌우 여백(16)이 있어 화면 여백(22)과 겹치지 않게 당겨 붙임
+                        if (permissionBanner != null)
+                          Transform.translate(
+                              offset: const Offset(-16, 0),
+                              child: SizedBox(width: MediaQuery.sizeOf(context).width, child: permissionBanner)),
+                        const SizedBox(height: 8),
+                        _WeatherRow(placeText: placeText, weather: weather, fallbackText: weatherFallbackText),
+                        SizedBox(height: compact ? 4 : 12),
+                        _HeroRow(snailHeight: snailHeight, showSubtitle: !compact),
+                        const SizedBox(height: 8),
+                        _GoalCard(isDistanceGoal: isDistanceGoal, valueText: goalValueText, onTap: onGoalTap, compact: compact),
+                        if (showStreak) ...[
+                          const SizedBox(height: 14),
+                          _StreakCard(days: streakDays),
+                        ],
+                        const SizedBox(height: 14),
+                      ],
                     ),
-                    // 배너는 자체 좌우 여백(16)이 있어 화면 여백(22)과 겹치지 않게 당겨 붙임
-                    if (permissionBanner != null)
-                      Transform.translate(offset: const Offset(-16, 0), child: SizedBox(width: MediaQuery.sizeOf(context).width, child: permissionBanner)),
-                    const SizedBox(height: 10),
-                    _WeatherRow(placeText: placeText, weather: weather, fallbackText: weatherFallbackText),
-                    const SizedBox(height: 18),
-                    _HeroRow(),
-                    const SizedBox(height: 8),
-                    _GoalCard(isDistanceGoal: isDistanceGoal, valueText: goalValueText, onTap: onGoalTap),
-                    if (streakDays > 0) ...[
-                      const SizedBox(height: 18),
-                      _StreakCard(days: streakDays),
-                    ],
-                    const SizedBox(height: 8),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 14),
-              child: ClayImageButton(
-                asset: 'assets/ui/btn_start.webp',
-                size: 108,
-                label: '시작',
-                onTap: onStart,
-              ),
-            ),
-          ],
+                // 시작 버튼은 스크롤 영역 아래에 따로 놓아 카드와 겹치지 않음
+                Padding(
+                  padding: const EdgeInsets.only(top: 2, bottom: 10),
+                  child: ClayImageButton(
+                    asset: 'assets/ui/btn_start.webp',
+                    size: startSize,
+                    label: '시작',
+                    onTap: onStart,
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -180,6 +198,11 @@ class _WeatherChip extends StatelessWidget {
 }
 
 class _HeroRow extends StatelessWidget {
+  const _HeroRow({required this.snailHeight, required this.showSubtitle});
+
+  final double snailHeight;
+  final bool showSubtitle;
+
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -190,27 +213,29 @@ class _HeroRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('오늘도 천천히,\n같이 달려요!', style: ClayText.headline()),
-              const SizedBox(height: 8),
-              const Text(
-                '천천히 달려도,\n매일 조금씩 더 건강해져요.',
-                style: TextStyle(fontSize: 13, height: 1.5, color: Tokens.inkMuted),
-              ),
-              const SizedBox(height: 24),
+              if (showSubtitle) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  '천천히 달려도,\n매일 조금씩 더 건강해져요.',
+                  style: TextStyle(fontSize: 13, height: 1.5, color: Tokens.inkMuted),
+                ),
+              ],
             ],
           ),
         ),
-        const SnailAnimation(kind: SnailKind.home, bodyHeight: 196),
+        SnailAnimation(kind: SnailKind.home, bodyHeight: snailHeight),
       ],
     );
   }
 }
 
 class _GoalCard extends StatelessWidget {
-  const _GoalCard({required this.isDistanceGoal, required this.valueText, required this.onTap});
+  const _GoalCard({required this.isDistanceGoal, required this.valueText, required this.onTap, this.compact = false});
 
   final bool isDistanceGoal;
   final String valueText;
   final VoidCallback onTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -240,7 +265,7 @@ class _GoalCard extends StatelessWidget {
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
-                  child: Text(valueText, style: ClayText.embossNumber(fontSize: 76)),
+                  child: Text(valueText, style: ClayText.embossNumber(fontSize: compact ? 58 : 76)),
                 ),
               ),
               const SizedBox(width: 8),

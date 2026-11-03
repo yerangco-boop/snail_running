@@ -2054,59 +2054,50 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // "항상 허용"이 아닐 때 시작 화면 상단에 띄우는 경고 + 설정 앱 딥링크
   Widget _buildPermissionBanner() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       decoration: BoxDecoration(
         color: Tokens.warnFace.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Tokens.warnText.withValues(alpha: 0.35)),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Icon(Icons.warning_amber_rounded, color: Tokens.warnText, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
+          const SizedBox(width: 8),
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '위치 권한을 "항상 허용"으로 바꿔주세요',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _s.preset.onBackground,
-                  ),
+                  '위치를 "항상 허용"으로 바꿔주세요',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Tokens.ink),
                 ),
-                const SizedBox(height: 3),
+                SizedBox(height: 2),
                 Text(
-                  '지금은 화면이 꺼지면 거리 기록이 끊깁니다.\n설정 → 권한 → 위치 → "항상 허용"',
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.4,
-                    color: _s.preset.onBackgroundMuted,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: () => Geolocator.openAppSettings(),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Tokens.coralFace,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      '설정 열기',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Tokens.ink,
-                      ),
-                    ),
-                  ),
+                  '화면이 꺼지면 거리 기록이 끊깁니다',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: Tokens.inkSoft),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: () => Geolocator.openAppSettings(),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Tokens.coralFace,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text(
+                '설정 열기',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Tokens.ink),
+              ),
             ),
           ),
         ],
