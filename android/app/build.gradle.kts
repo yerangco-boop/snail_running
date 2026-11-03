@@ -29,7 +29,11 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.snail_running"
+        // 미리보기 빌드(CI)는 APP_ID_SUFFIX=.preview 로 별개 앱으로 설치되게 함 — 정식 앱과 나란히 설치 가능.
+        // 환경변수가 없으면(정식 빌드) 기존 ID 그대로
+        val idSuffix = System.getenv("APP_ID_SUFFIX") ?: ""
+        applicationId = "com.example.snail_running" + idSuffix
+        manifestPlaceholders["appLabel"] = if (idSuffix.isEmpty()) "snail_running" else "달팽이 미리보기"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

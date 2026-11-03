@@ -54,6 +54,8 @@ jobs:
 
       - name: Build release APK
         env:
+          # 정식 앱(com.example.snail_running)과 별개 앱으로 설치되게 패키지 ID에 접미사를 붙임
+          APP_ID_SUFFIX: .preview
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
         run: |
           flutter build apk --release --dart-define=OPENWEATHER_API_KEY="$OPENWEATHER_API_KEY"
