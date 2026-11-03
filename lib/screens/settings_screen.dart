@@ -7,6 +7,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
 import '../theme/tokens.dart';
 import '../models/app_settings.dart';
+import '../widgets/clay/clay_card.dart';
 import '../services/database_service.dart';
 import '../services/file_logger.dart';
 import '../services/metronome_service.dart';
@@ -399,13 +400,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             const SizedBox(height: 28),
 
-            // ── 테마 선택 ─────────────────────────────────────────────────────
-            _sectionHeader("테마"),
-            const SizedBox(height: 8),
-
-            _buildPresetGrid(),
-
-            const SizedBox(height: 28),
+            // 테마 선택 영역은 UI 개편으로 숨김 (한 가지 룩 사용)
 
             // ── 디버그 ────────────────────────────────────────────────────────
             _sectionHeader("디버그"),
@@ -442,19 +437,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // 앵커표 범위(7~15분/km)를 벗어나면 BPM↔페이스 되돌림이 성립하지 않으므로 알려줌
     final outOfRange = _targetPaceMin < _minInvertiblePaceMin ||
         _targetPaceMin > _maxInvertiblePaceMin;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 14, 16, 14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: _s.preset.cardGradient,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _accent.withValues(alpha: 0.45)),
-        boxShadow: _s.preset.cardShadow,
-      ),
-      child: Row(
+    return ClayCard(
+        radius: 24,
+        padding: const EdgeInsets.fromLTRB(20, 14, 16, 14),
+        child: Row(
         children: [
           Icon(Icons.auto_awesome_outlined, color: _accent, size: 22),
           const SizedBox(width: 16),
@@ -501,19 +487,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // 알림 볼륨을 타므로, 알림 볼륨이 낮으면 평소에도 작게 들릴 수 있음을 함께 안내.
   Widget _buildDuringCallCard() {
     final on = _s.metronomeDuringCall;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 6, 12, 12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: _s.preset.cardGradient,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _s.preset.cardBorder),
-        boxShadow: _s.preset.cardShadow,
-      ),
-      child: Column(
+    return ClayCard(
+        radius: 24,
+        padding: const EdgeInsets.fromLTRB(20, 6, 12, 12),
+        child: Column(
         children: [
           Row(
             children: [
@@ -590,19 +567,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // 값은 SoundPool의 leftVolume/rightVolume(안드로이드), Web Audio gain(웹)으로 전달됨
   Widget _buildMetronomeVolumeCard() {
     final percent = (_s.metronomeVolume * 100).round();
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: _s.preset.cardGradient,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _s.preset.cardBorder),
-        boxShadow: _s.preset.cardShadow,
-      ),
-      child: Column(
+    return ClayCard(
+        radius: 24,
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
+        child: Column(
         children: [
           Row(
             children: [
@@ -631,19 +599,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // 앱 아이콘 + 앱 이름 + 버전 + 제작자 표시
   Widget _buildAboutCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: _s.preset.cardGradient,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _s.preset.cardBorder),
-        boxShadow: _s.preset.cardShadow,
-      ),
-      child: Column(
+    return ClayCard(
+        radius: 24,
+        padding: const EdgeInsets.all(20),
+        child: Column(
         children: [
           Row(
             children: [
@@ -745,156 +704,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ── 테마 프리셋 2열 그리드 ─────────────────────────────────────────────────
-  Widget _buildPresetGrid() {
-    const presets = kThemePresets;
-    final rows = <Widget>[];
-    for (var i = 0; i < presets.length; i += 2) {
-      rows.add(
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: _presetCard(presets[i])),
-              const SizedBox(width: 12),
-              if (i + 1 < presets.length)
-                Expanded(child: _presetCard(presets[i + 1]))
-              else
-                const Expanded(child: SizedBox()),
-            ],
-          ),
-        ),
-      );
-      if (i + 2 < presets.length) rows.add(const SizedBox(height: 12));
-    }
-    return Column(children: rows);
-  }
-
-  // ── 테마 프리셋 카드 ───────────────────────────────────────────────────────
-  Widget _presetCard(ThemePreset preset) {
-    final isSelected = identical(_s.preset, preset);
-    final accent = preset.accent;
-
-    return GestureDetector(
-      onTap: () => _update(() => _s.preset = preset),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        height: 100,
-        decoration: BoxDecoration(
-          color: preset.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isSelected ? accent : preset.onSurface.withValues(alpha: 0.07),
-            width: isSelected ? 2 : 1,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: accent.withValues(alpha: 0.35),
-                    blurRadius: 16,
-                    spreadRadius: 0,
-                    offset: const Offset(0, 4),
-                  )
-                ]
-              : null,
-        ),
-        child: Stack(
-          children: [
-            // 대각선 그라디언트 (테마 분위기)
-            Positioned.fill(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(17),
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topRight,
-                      end: Alignment.bottomLeft,
-                      colors: [
-                        accent.withValues(alpha: 0.18),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // 상단: 색상 점 + 체크
-                  Row(
-                    children: [
-                      _dot(preset.background, 11),
-                      const SizedBox(width: 4),
-                      _dot(preset.surface.withValues(alpha: 0.5), 11,
-                          border: preset.onSurface.withValues(alpha: 0.25)),
-                      const SizedBox(width: 4),
-                      _dot(accent, 11),
-                      const Spacer(),
-                      if (isSelected)
-                        Container(
-                          width: 20,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: accent,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.check_rounded,
-                              color: Tokens.ink, size: 13),
-                        ),
-                    ],
-                  ),
-
-                  // 하단: 테마 이름
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        preset.name,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: isSelected ? accent : preset.onSurface,
-                          height: 1.2,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        preset.subtitle,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: preset.grey,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _dot(Color color, double size, {Color? border}) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: border != null ? Border.all(color: border, width: 1) : null,
-        ),
-      );
-
-  // ── 공통 위젯 ──────────────────────────────────────────────────────────────
-
   Widget _sectionHeader(String text) => Padding(
         padding: const EdgeInsets.only(left: 8, bottom: 4),
         child: Text(
@@ -916,20 +725,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }) =>
       InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topRight,
-              end: Alignment.bottomLeft,
-              colors: _s.preset.cardGradient,
-            ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _s.preset.cardBorder),
-            boxShadow: _s.preset.cardShadow,
-          ),
-          child: Row(
+        borderRadius: BorderRadius.circular(24),
+        child: ClayCard(
+        radius: 24,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Row(
             children: [
               Icon(icon, color: _accent, size: 22),
               const SizedBox(width: 16),
