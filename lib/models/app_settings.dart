@@ -49,7 +49,7 @@ class AppSettings {
     this.mixWithOtherAudio = true,
     this.metronomeEnabled = true,
     this.metronomeVolume = 1.0,
-    this.metronomeDuringCall = false,
+    this.metronomeDuringCall = true,
     this.weightKg = 70.0,
     this.keepScreenOn = true,
     ThemePreset? preset,

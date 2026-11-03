@@ -1,10 +1,28 @@
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:volume_controller/volume_controller.dart';
 
 // 모바일/데스크톱 전용 — audioplayers 사용
 class ClickPlayer {
   AudioPlayer _player = AudioPlayer();
   double _volume = 1.0;
+
+  // 폰의 미디어 볼륨이 0이면 사용자가 소리를 끈 것으로 보고 울리지 않음.
+  // 통화 중 재생용 알람 스트림은 미디어 볼륨과 별개라 따로 확인하지 않으면 볼륨 0에도 소리가 남.
+  // 박자 타이밍이 흔들리지 않도록 클릭마다 기다리지 않고, 1초에 한 번만 갱신한 값을 씀
+  bool _systemMuted = false;
+  DateTime _volumeCheckedAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void _refreshSystemMute() {
+    final now = DateTime.now();
+    if (now.difference(_volumeCheckedAt) < const Duration(seconds: 1)) return;
+    _volumeCheckedAt = now;
+    VolumeController.instance.getVolume().then((v) {
+      _systemMuted = v <= 0.0;
+    }).catchError((_) {
+      _systemMuted = false;
+    });
+  }
 
   Future<void> init({
     bool mixWithOtherAudio = true,
@@ -80,6 +98,8 @@ class ClickPlayer {
     // (완료된 스트림은 paused 상태가 아니라서) 무시되는 경우가 있어, stop()으로
     // streamId를 확실히 비운 뒤 resume()을 호출해 매번 새로 재생되게 함
     // 재초기화 도중 폐기된 플레이어에 남은 호출이 도달해도 앱이 죽지 않도록 방어
+    _refreshSystemMute();
+    if (_systemMuted) return;
     try {
       await _player.stop();
       await _player.resume();
