@@ -205,26 +205,84 @@ class _HeroRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 글 묶음과 달팽이를 같은 가로줄의 세로 중앙에 맞춰 좌우·상하 균형을 잡음
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text('오늘도 천천히,\n같이 달려요!', style: ClayText.headline()),
+              const _KeepWordLines(
+                // 단어 중간에서 끊기지 않게, 한 줄에 다 들어가면 2줄 아니면 3줄로 나눔
+                candidates: [
+                  ['오늘도 천천히,', '같이 달려요!'],
+                  ['오늘도', '천천히,', '같이 달려요!'],
+                ],
+                fontSize: 27,
+              ),
               if (showSubtitle) ...[
                 const SizedBox(height: 8),
-                const Text(
-                  '천천히 달려도,\n매일 조금씩 더 건강해져요.',
-                  style: TextStyle(fontSize: 13, height: 1.5, color: Tokens.inkMuted),
+                const _KeepWordLines(
+                  candidates: [
+                    ['천천히 달려도,', '매일 조금씩 더 건강해져요.'],
+                    ['천천히 달려도,', '매일 조금씩', '더 건강해져요.'],
+                  ],
+                  fontSize: 13,
+                  isHeadline: false,
                 ),
               ],
             ],
           ),
         ),
+        const SizedBox(width: 8),
         SnailAnimation(kind: SnailKind.home, bodyHeight: snailHeight),
       ],
+    );
+  }
+}
+
+/// 한글은 단어 중간에서 줄이 바뀌면 오류처럼 보이므로, 미리 나눠 둔 줄 묶음 중
+/// 모든 줄이 가로 폭에 들어가는 첫 번째 묶음을 쓴다. 어느 것도 안 들어가면 마지막 묶음을 비율로 줄여 맞춘다.
+class _KeepWordLines extends StatelessWidget {
+  const _KeepWordLines({required this.candidates, required this.fontSize, this.isHeadline = true});
+
+  final List<List<String>> candidates;
+  final double fontSize;
+  final bool isHeadline;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = isHeadline
+        ? ClayText.headline(fontSize: fontSize)
+        : TextStyle(fontSize: fontSize, height: 1.5, color: Tokens.inkMuted);
+    final scaler = MediaQuery.textScalerOf(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        double widthOf(String line) {
+          final tp = TextPainter(
+            text: TextSpan(text: line, style: style),
+            textDirection: TextDirection.ltr,
+            textScaler: scaler,
+            maxLines: 1,
+          )..layout();
+          return tp.width;
+        }
+
+        var chosen = candidates.last;
+        for (final lines in candidates) {
+          if (lines.every((l) => widthOf(l) <= constraints.maxWidth)) {
+            chosen = lines;
+            break;
+          }
+        }
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(chosen.join('\n'), style: style, softWrap: false),
+        );
+      },
     );
   }
 }

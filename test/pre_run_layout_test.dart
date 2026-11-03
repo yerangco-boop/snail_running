@@ -4,6 +4,7 @@ import 'package:snail_running/services/weather_service.dart';
 import 'package:snail_running/theme/tokens.dart';
 import 'package:snail_running/widgets/clay/clay_image_button.dart';
 import 'package:snail_running/widgets/home/pre_run_view.dart';
+import 'package:snail_running/widgets/snail_animation.dart';
 
 // 시작 전 홈에서 목표 카드가 시작 버튼에 가려지거나 잘리지 않는지 화면 크기·글자 배율별로 검사
 void main() {
@@ -68,6 +69,20 @@ void main() {
         final streakFinder = find.text('일 연속');
         final lastFinder = streakFinder.evaluate().isNotEmpty ? streakFinder : find.text('5.0');
 
+        // 문구는 단어 중간에서 끊기지 않는 두 가지 형태 중 하나여야 함
+        final headline = tester
+            .widgetList<Text>(find.byType(Text))
+            .map((t) => t.data)
+            .firstWhere((d) => d != null && d.contains('같이 달려요!'))!;
+        expect(['오늘도 천천히,\n같이 달려요!', '오늘도\n천천히,\n같이 달려요!'], contains(headline));
+        // 문구 묶음과 달팽이의 세로 중심이 같아야 함 (구도 균형)
+        final snailRect = tester.getRect(find.byType(SnailAnimation));
+        final textTop = tester.getRect(find.text(headline)).top;
+        final subs = find.textContaining('천천히 달려도');
+        final textBottom = subs.evaluate().isNotEmpty
+            ? tester.getRect(subs).bottom
+            : tester.getRect(find.text(headline)).bottom;
+        expect(((textTop + textBottom) / 2 - snailRect.center.dy).abs(), lessThan(3.0));
         // 스크롤 영역은 항상 시작 버튼 위에서 끝나야 함(겹침 없음)
         expect(scroll.bottom, lessThanOrEqualTo(button.top));
         // 글자 배율 1.0이면 스크롤 없이 한 화면에 전부, 크게 키운 경우는 맨 아래까지 밀었을 때 전부 보여야 함
