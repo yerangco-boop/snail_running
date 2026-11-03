@@ -25,6 +25,7 @@ import '../utils/route_utils.dart';
 import '../utils/streak.dart';
 import '../widgets/clay/clay_card.dart';
 import '../widgets/clay/clay_image_button.dart';
+import '../widgets/clay/clay_style.dart';
 import '../widgets/home/pre_run_view.dart';
 import '../widgets/snail_animation.dart';
 
@@ -1560,88 +1561,133 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final time = _formattedTime;
     final pace = _avgPaceDisplay;
     final selected = <String>{};
+    // 목표 달성 여부: 응원 / 아쉬워함 달팽이 선택용
+    final achieved = _s.goalType == GoalType.distance
+        ? _distanceKm >= _s.targetDistanceKm
+        : _seconds >= _s.targetTimeMinutes * 60;
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          backgroundColor: _s.preset.surface,
-          title: const Text("운동 완료", style: TextStyle(fontWeight: FontWeight.bold)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _summaryRow("거리", "$dist km"),
-              _summaryRow("시간", time),
-              _summaryRow("평균 페이스", "$pace /km"),
-              const SizedBox(height: 20),
-              Divider(color: _s.preset.onSurface.withValues(alpha: 0.12)),
-              const SizedBox(height: 12),
-              const Text(
-                "불편한 부위가 있나요?",
-                style: TextStyle(fontSize: 13, color: Tokens.inkMuted),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _stretchParts.map((part) {
-                  final on = selected.contains(part);
-                  return GestureDetector(
-                    onTap: () => setDlgState(() {
-                      if (on) { selected.remove(part); } else { selected.add(part); }
-                    }),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: on ? _s.accent : Colors.transparent,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: on ? _s.accent : _s.preset.onSurface.withValues(alpha: 0.24)),
-                      ),
+        builder: (ctx, setDlgState) => Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: ClayCard(
+            radius: 32,
+            padding: const EdgeInsets.fromLTRB(22, 16, 22, 14),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: SnailAnimation(
+                      kind: achieved ? SnailKind.cheer : SnailKind.fail,
+                      bodyHeight: 96,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    achieved ? "목표 달성!" : "오늘도 수고했어요",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.w800, color: Tokens.ink),
+                  ),
+                  if (!achieved)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4),
                       child: Text(
-                        part,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: on ? Tokens.ink : Tokens.inkMuted,
+                        "내일 또 같이 달려요",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 14, color: Tokens.inkMuted),
+                      ),
+                    ),
+                  const SizedBox(height: 14),
+                  _summaryRow("거리", "$dist km"),
+                  _summaryRow("시간", time),
+                  _summaryRow("평균 페이스", "$pace /km"),
+                  const SizedBox(height: 12),
+                  Divider(color: Tokens.ink.withValues(alpha: 0.12)),
+                  const SizedBox(height: 8),
+                  const Text(
+                    "불편한 부위가 있나요?",
+                    style: TextStyle(fontSize: 13, color: Tokens.inkMuted),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _stretchParts.map((part) {
+                      final on = selected.contains(part);
+                      return GestureDetector(
+                        onTap: () => setDlgState(() {
+                          if (on) { selected.remove(part); } else { selected.add(part); }
+                        }),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                          decoration: BoxDecoration(
+                            color: on ? Tokens.coralFace : Colors.transparent,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: on ? Tokens.coralFace : Tokens.ink.withValues(alpha: 0.24)),
+                          ),
+                          child: Text(
+                            part,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: on ? FontWeight.w700 : FontWeight.w400,
+                              color: on ? Tokens.ink : Tokens.inkMuted,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  if (selected.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        side: const BorderSide(color: Tokens.coralFace, width: 1.5),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () => _openStretchYoutube(selected.toList()),
+                      icon: const Icon(Icons.play_circle_outline, size: 18, color: Tokens.coralText),
+                      label: const Text("김병곤 스트레칭 보기",
+                          style: TextStyle(color: Tokens.coralText)),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  Center(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _resetWorkout();
+                      },
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          gradient: ClayStyle.coralFace,
+                          boxShadow: ClayStyle.coralShadow,
+                          border: Border.all(color: const Color(0x8CFFFFFF), width: 1.2),
+                        ),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 48, vertical: 14),
+                          child: Text("확인",
+                              style: TextStyle(
+                                  fontSize: 17, fontWeight: FontWeight.w800, color: Tokens.ink)),
                         ),
                       ),
                     ),
-                  );
-                }).toList(),
-              ),
-              if (selected.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: _s.accent),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    onPressed: () => _openStretchYoutube(selected.toList()),
-                    icon: Icon(Icons.play_circle_outline,
-                        size: 18, color: _s.accent),
-                    label: Text("김병곤 스트레칭 보기",
-                        style: TextStyle(color: Tokens.coralText)),
                   ),
-                ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _resetWorkout();
-              },
-              child: Text("확인", style: TextStyle(color: Tokens.coralText, fontSize: 16)),
+                ],
+              ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -2185,9 +2231,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(color: _s.preset.grey, fontSize: 15)),
+        Text(label, style: const TextStyle(color: Tokens.inkMuted, fontSize: 15)),
         Text(value,
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: _s.preset.onSurface)),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Tokens.ink)),
       ],
     ),
   );
