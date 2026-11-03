@@ -1,4 +1,6 @@
-# 미리보기 전용: Release/태그를 만들지 않고 Actions 결과물(artifact)로만 올림 — releases/latest(QR·업데이트 알림)에 영향 없음
+# 미리보기 전용: Actions 결과물 + 'preview' 사전 릴리스(prerelease)로 올림.
+# prerelease는 releases/latest에 잡히지 않아 정식 QR·업데이트 알림에 영향 없음.
+# 고정 주소: https://github.com/yerangco-boop/snail_running/releases/download/preview/app-release.apk
 name: Build Preview APK (ui-redesign)
 
 on:
@@ -7,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -65,3 +67,14 @@ jobs:
           name: snail-running-preview-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+
+      # QR로 설치할 수 있게 고정 주소(preview 태그)로도 게시. 매 빌드마다 덮어씀
+      - name: Publish preview prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete preview --cleanup-tag --yes || true
+          gh release create preview build/app/outputs/flutter-apk/app-release.apk \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "미리보기 (ui-redesign ${GITHUB_SHA::7})" \
+            --notes "UI 개편 미리보기 빌드. 정식 앱과 별개 앱(달팽이 미리보기)으로 설치됩니다."
