@@ -80,6 +80,32 @@ Polyline buildRoutePolyline(List<LatLng> points, Color color) {
   );
 }
 
+// 지도 채도를 낮추는 필터(채도 0.45) — 점토 경로선이 배경에서 도드라지게 함
+const ColorFilter kMutedMapFilter = ColorFilter.matrix(<double>[
+  0.5311, 0.4426, 0.0263, 0, 0, //
+  0.1311, 0.8426, 0.0263, 0, 0, //
+  0.1311, 0.4426, 0.4263, 0, 0, //
+  0, 0, 0, 1, 0,
+]);
+
+// 점토로 빚은 밧줄 느낌의 경로선: 바닥 그림자 → 어두운 가장자리 → 코랄 본체 → 밝은 하이라이트.
+// 아래에서 위로 겹쳐 그려야 하므로 순서대로 PolylineLayer에 넘긴다.
+List<Polyline> buildClayRoutePolylines(List<LatLng> points) {
+  Polyline line(Color color, double width) => Polyline(
+        points: points,
+        color: color,
+        strokeWidth: width,
+        strokeCap: StrokeCap.round,
+        strokeJoin: StrokeJoin.round,
+      );
+  return [
+    line(const Color(0x40501E0A), 13),
+    line(const Color(0xFFC4532B), 10),
+    line(const Color(0xFFF57A4F), 7.5),
+    line(const Color(0x66FFFFFF), 2.5),
+  ];
+}
+
 // 바퀴 완료 지점 마커 — km 배지와 구분되도록 작은 깃발 아이콘 + 바퀴 번호
 Widget buildLapMarkerChip(int lapNumber, Color color) {
   return Container(

@@ -23,7 +23,10 @@ import '../services/workout_snapshot.dart';
 import '../services/update_checker.dart';
 import '../utils/route_utils.dart';
 import '../utils/streak.dart';
+import '../widgets/clay/clay_card.dart';
+import '../widgets/clay/clay_image_button.dart';
 import '../widgets/home/pre_run_view.dart';
+import '../widgets/snail_animation.dart';
 
 enum WorkoutState { idle, countdown, running, paused }
 
@@ -1805,14 +1808,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
             ),
             children: [
+              // 채도를 낮춰 점토 경로선이 도드라지게 함
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'snail_running',
+                tileBuilder: (context, tileWidget, tile) => ColorFiltered(
+                  colorFilter: kMutedMapFilter,
+                  child: tileWidget,
+                ),
               ),
               if (_routePoints.length > 1)
-                PolylineLayer(
-                  polylines: [buildRoutePolyline(_routePoints, _s.accent)],
-                ),
+                PolylineLayer(polylines: buildClayRoutePolylines(_routePoints)),
               if (_routePoints.length > 1)
                 MarkerLayer(
                   markers: [
@@ -1851,16 +1857,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ],
           ),
 
-          // ── 테마 그라디언트 오버레이 (지도가 중앙에서 비침) ──
+          // ── 크림 덮개 (지도가 은은하게 비침, 위·아래는 글자 대비를 위해 더 진하게) ──
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  _s.preset.runGradient[0].withValues(alpha: 0.90),
-                  _s.preset.runGradient[1].withValues(alpha: 0.80),
-                  _s.preset.runGradient[2].withValues(alpha: 0.93),
+                  Tokens.bg.withValues(alpha: 0.88),
+                  Tokens.bg.withValues(alpha: 0.72),
+                  Tokens.bg.withValues(alpha: 0.90),
                 ],
                 stops: const [0.0, 0.5, 1.0],
               ),
@@ -1873,8 +1879,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               children: [
                 // ── 상단 메트릭 3개 ──────────────────────────────
                 _buildMetricsRow(),
-
-                Container(height: 1, color: _s.preset.divider),
 
                 // ── 메트로놈 즉시 ON/OFF ─────────────────────────
                 Padding(
@@ -1907,6 +1911,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                           const SizedBox(height: 20),
                         ],
+                        SnailAnimation(
+                          kind: isPaused ? SnailKind.runStill : SnailKind.run,
+                          bodyHeight: 64,
+                        ),
+                        const SizedBox(height: 8),
                         GestureDetector(
                           onTap: _cycleMainDisplay,
                           behavior: HitTestBehavior.opaque,
@@ -1918,7 +1927,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 style: TextStyle(
                                   fontSize: 100,
                                   fontWeight: FontWeight.w800,
-                                  color: _s.preset.onRun,
+                                  color: Tokens.ink,
                                   letterSpacing: -5,
                                   height: 1.0,
                                 ),
@@ -1963,7 +1972,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
                 // ── 하단 컨트롤 ─────────────────────────────────
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 56),
+                  padding: const EdgeInsets.only(bottom: 36),
                   child: isPaused ? _buildPausedControls() : _buildRunningControl(),
                 ),
               ],
@@ -2061,15 +2070,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _buildMetricsRow() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
-        children: [
-          Expanded(child: _metricItem('페이스', _avgPaceDisplay)),
-          Container(width: 1, height: 32, color: _s.preset.divider),
-          Expanded(child: _metricItem('BPM', '${_s.bpm}')),
-          Container(width: 1, height: 32, color: _s.preset.divider),
-          Expanded(child: _metricItem('시간', _formattedTime)),
-        ],
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: ClayCard(
+        radius: 24,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: Row(
+          children: [
+            Expanded(child: _metricItem('페이스', _avgPaceDisplay)),
+            Container(width: 1, height: 32, color: Tokens.ink.withValues(alpha: 0.12)),
+            Expanded(child: _metricItem('BPM', '${_s.bpm}')),
+            Container(width: 1, height: 32, color: Tokens.ink.withValues(alpha: 0.12)),
+            Expanded(child: _metricItem('시간', _formattedTime)),
+          ],
+        ),
       ),
     );
   }
@@ -2134,37 +2147,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  // 시작·일시정지·재개 공용 원형 버튼: 번지는 글로우 대신 또렷한 바깥 링 + 짧은 바닥 그림자
-  BoxDecoration _coralButtonDecoration() => BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_s.preset.accentGradientStart, _s.preset.accentGradientEnd],
-        ),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 2),
-        boxShadow: [
-          BoxShadow(color: Tokens.coralFace.withValues(alpha: 0.18), spreadRadius: 8),
-          BoxShadow(
-            color: const Color(0xFFB4694B).withValues(alpha: 0.30),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      );
-
   // 주행 중: 일시정지 버튼만
   Widget _buildRunningControl() {
-    return GestureDetector(
+    return ClayImageButton(
+      asset: 'assets/ui/btn_pause.webp',
+      size: 88,
+      label: '일시정지',
       onTap: _pauseWorkout,
-      child: Container(
-        width: 80,
-        height: 80,
-        decoration: _coralButtonDecoration(),
-        child: const Center(
-          child: Icon(Icons.pause_rounded, size: 42, color: Tokens.ink),
-        ),
-      ),
     );
   }
 
@@ -2172,31 +2161,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildPausedControls() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        GestureDetector(
+        ClayImageButton(
+          asset: 'assets/ui/btn_stop.webp',
+          size: 76,
+          label: '정지',
           onTap: _stopWorkout,
-          child: Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.transparent,
-              border: Border.all(color: Tokens.danger, width: 2),
-            ),
-            child: const Center(child: Icon(Icons.stop_rounded, size: 32, color: Tokens.danger)),
-          ),
         ),
         const SizedBox(width: 40),
-        GestureDetector(
+        ClayImageButton(
+          asset: 'assets/ui/btn_resume.webp',
+          size: 88,
+          label: '재개',
           onTap: _resumeWorkout,
-          child: Container(
-            width: 80,
-            height: 80,
-            decoration: _coralButtonDecoration(),
-            child: const Center(
-              child: Icon(Icons.play_arrow_rounded, size: 44, color: Tokens.ink),
-            ),
-          ),
         ),
       ],
     );
