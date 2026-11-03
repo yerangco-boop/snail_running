@@ -17,11 +17,19 @@ class PreRunView extends StatelessWidget {
     required this.weatherFallbackText,
     required this.isDistanceGoal,
     required this.goalValueText,
+    required this.paceText,
+    required this.bpm,
     required this.streakDays,
     required this.onGoalTap,
     required this.onStart,
     this.permissionBanner,
   });
+
+  /// 목표 페이스 표시값 (예: 10'38"/km). 설정 전이면 "--"
+  final String paceText;
+
+  /// 설정에 저장된 메트로놈 BPM — 페이스와 서로 연동되는 한 쌍
+  final int bpm;
 
   /// "오후 3:12 기준 · 충주시 목행동" 같은 지역·시각 한 줄
   final String placeText;
@@ -51,38 +59,65 @@ class PreRunView extends StatelessWidget {
             final startSize = constraints.maxHeight >= 700 ? 100.0 : (compact ? 72.0 : 84.0);
             // 낮은 화면에서는 보조 정보인 연속 카드를 접어 목표 카드와 시작 버튼을 우선 보여 줌
             final showStreak = streakDays > 0 && constraints.maxHeight >= 600 && !narrow;
-            final fixed = (440 + startSize + (permissionBanner != null ? 92 : 0) + (showStreak ? 80 : 0)) *
+            // 낮은 화면은 여유 없이 보수적으로, 충분히 큰 화면은 달팽이를 더 키워 남는 공간을 채움
+            // (그래도 남는 높이는 아래 스크롤 영역에서 구역 사이로 고르게 나뉨)
+            final fixed = ((compact ? 440 : 380) + startSize + (permissionBanner != null ? 92 : 0) + (showStreak ? 80 : 0)) *
                 (1 + (textScale - 1) * 0.6);
-            final snailHeight = (constraints.maxHeight - fixed).clamp(compact ? 64.0 : 96.0, 190.0);
+            final snailHeight = (constraints.maxHeight - fixed).clamp(compact ? 64.0 : 96.0, 240.0);
+            final padTop = compact ? 8.0 : 14.0;
             return Column(
               children: [
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(22, compact ? 8 : 14, 22, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '달팽이 러닝',
-                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Tokens.ink),
+                  child: LayoutBuilder(
+                    builder: (context, box) => SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(22, padTop, 22, 8),
+                      // 내용이 화면보다 짧으면 남는 높이를 구역 사이에 고르게 나눔 (카드와 시작 버튼 사이만 비어 보이지 않게)
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: box.maxHeight - padTop - 8),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  '달팽이 러닝',
+                                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Tokens.ink),
+                                ),
+                                // 배너는 자체 좌우 여백(16)이 있어 화면 여백(22)과 겹치지 않게 당겨 붙임
+                                if (permissionBanner != null)
+                                  Transform.translate(
+                                      offset: const Offset(-16, 0),
+                                      child: SizedBox(width: MediaQuery.sizeOf(context).width, child: permissionBanner)),
+                                const SizedBox(height: 8),
+                                _WeatherRow(placeText: placeText, weather: weather, fallbackText: weatherFallbackText),
+                              ],
+                            ),
+                            _HeroRow(snailHeight: snailHeight, showSubtitle: !compact),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                _GoalCard(
+                                  isDistanceGoal: isDistanceGoal,
+                                  valueText: goalValueText,
+                                  paceText: paceText,
+                                  bpm: bpm,
+                                  stackInfo: narrow,
+                                  onTap: onGoalTap,
+                                  compact: compact,
+                                ),
+                                if (showStreak) ...[
+                                  const SizedBox(height: 14),
+                                  _StreakCard(days: streakDays),
+                                ],
+                              ],
+                            ),
+                            // 마지막 빈 칸: 카드 아래에도 다른 구간과 같은 간격이 생기게 하는 자리
+                            const SizedBox(height: 14),
+                          ],
                         ),
-                        // 배너는 자체 좌우 여백(16)이 있어 화면 여백(22)과 겹치지 않게 당겨 붙임
-                        if (permissionBanner != null)
-                          Transform.translate(
-                              offset: const Offset(-16, 0),
-                              child: SizedBox(width: MediaQuery.sizeOf(context).width, child: permissionBanner)),
-                        const SizedBox(height: 8),
-                        _WeatherRow(placeText: placeText, weather: weather, fallbackText: weatherFallbackText),
-                        SizedBox(height: compact ? 4 : 12),
-                        _HeroRow(snailHeight: snailHeight, showSubtitle: !compact),
-                        const SizedBox(height: 8),
-                        _GoalCard(isDistanceGoal: isDistanceGoal, valueText: goalValueText, onTap: onGoalTap, compact: compact),
-                        if (showStreak) ...[
-                          const SizedBox(height: 14),
-                          _StreakCard(days: streakDays),
-                        ],
-                        const SizedBox(height: 14),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -289,10 +324,23 @@ class _KeepWordLines extends StatelessWidget {
 }
 
 class _GoalCard extends StatelessWidget {
-  const _GoalCard({required this.isDistanceGoal, required this.valueText, required this.onTap, this.compact = false});
+  const _GoalCard({
+    required this.isDistanceGoal,
+    required this.valueText,
+    required this.paceText,
+    required this.bpm,
+    required this.stackInfo,
+    required this.onTap,
+    this.compact = false,
+  });
 
   final bool isDistanceGoal;
   final String valueText;
+  final String paceText;
+  final int bpm;
+
+  /// 좁은 화면에서는 페이스·BPM을 숫자 옆이 아니라 아래 한 줄로 내림
+  final bool stackInfo;
   final VoidCallback onTap;
   final bool compact;
 
@@ -317,24 +365,73 @@ class _GoalCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Flexible(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(valueText, style: ClayText.embossNumber(fontSize: compact ? 58 : 76)),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(valueText, style: ClayText.embossNumber(fontSize: compact ? 58 : 76)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      isDistanceGoal ? 'km' : '분',
+                      style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: Tokens.inkMuted),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                isDistanceGoal ? 'km' : '분',
-                style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: Tokens.inkMuted),
-              ),
+              if (!stackInfo) _PaceBpmInfo(paceText: paceText, bpm: bpm, vertical: true),
             ],
           ),
+          if (stackInfo) ...[
+            const SizedBox(height: 6),
+            _PaceBpmInfo(paceText: paceText, bpm: bpm, vertical: false),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// 목표 카드 안의 보조 정보: 목표 페이스와 메트로놈 BPM (설정에서 서로 연동되는 한 쌍)
+class _PaceBpmInfo extends StatelessWidget {
+  const _PaceBpmInfo({required this.paceText, required this.bpm, required this.vertical});
+
+  final String paceText;
+  final int bpm;
+  final bool vertical;
+
+  Widget _item(String label, String value) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 11, color: Tokens.inkMuted)),
+          Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Tokens.ink)),
+        ],
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final pace = _item('목표 페이스', paceText);
+    final metro = _item('메트로놈', '$bpm BPM');
+    if (!vertical) {
+      return Wrap(spacing: 24, runSpacing: 4, children: [pace, metro]);
+    }
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.only(left: 12),
+      decoration: const BoxDecoration(border: Border(left: BorderSide(color: Color(0x1F000000), width: 2))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [pace, const SizedBox(height: 8), metro],
       ),
     );
   }

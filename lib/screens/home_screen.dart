@@ -1782,6 +1782,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       goalValueText: _s.goalType == GoalType.distance
           ? _s.targetDistanceKm.toStringAsFixed(1)
           : '${_s.targetTimeMinutes}',
+      paceText: (_s.paceMinutes == 0 && _s.paceSeconds == 0)
+          ? '--'
+          : "${_s.paceMinutes}'${_s.paceSeconds.toString().padLeft(2, '0')}\"/km",
+      bpm: _s.bpm,
       streakDays: _streakDays,
       onGoalTap: _showGoalSheet,
       onStart: _startCountdown,

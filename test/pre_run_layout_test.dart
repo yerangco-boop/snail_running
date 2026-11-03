@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:snail_running/services/weather_service.dart';
 import 'package:snail_running/theme/tokens.dart';
+import 'package:snail_running/widgets/clay/clay_card.dart';
 import 'package:snail_running/widgets/clay/clay_image_button.dart';
 import 'package:snail_running/widgets/home/pre_run_view.dart';
 import 'package:snail_running/widgets/snail_animation.dart';
@@ -27,6 +28,8 @@ void main() {
             weatherFallbackText: '날씨 정보 없음',
             isDistanceGoal: true,
             goalValueText: '5.0',
+            paceText: "10'38\"/km",
+            bpm: 175,
             streakDays: streak,
             onGoalTap: () {},
             onStart: () {},
@@ -103,6 +106,27 @@ void main() {
         expect(goalValue.bottom, lessThanOrEqualTo(scroll.bottom));
         if (c.$4 <= 1.0) {
           expect(tester.getRect(lastFinder).bottom, lessThanOrEqualTo(scroll.bottom));
+        }
+        // 목표 페이스·BPM이 카드 안에 보이고, "목표 변경" 칩과 겹치지 않아야 함
+        final cardFinder = find.ancestor(of: find.text('목표 거리').first, matching: find.byType(ClayCard)).first;
+        final card = tester.getRect(cardFinder);
+        final paceRect = tester.getRect(find.text("10'38\"/km"));
+        final bpmRect = tester.getRect(find.text('175 BPM'));
+        final chipRect = tester.getRect(find.text('목표 변경'));
+        for (final r in [paceRect, bpmRect]) {
+          expect(r.left, greaterThanOrEqualTo(card.left));
+          expect(r.right, lessThanOrEqualTo(card.right));
+          expect(r.top, greaterThanOrEqualTo(card.top));
+          expect(r.bottom, lessThanOrEqualTo(card.bottom));
+          expect(r.overlaps(chipRect), isFalse, reason: '목표 변경 칩과 겹침');
+        }
+        // 한 화면에 다 들어가는 세로로 긴 화면(글자 배율 1.0)에서는 카드와 시작 버튼 사이가 휑하지 않아야 함
+        if (c.$4 <= 1.0 && c.$3 >= 700 && !banner) {
+          final gap = button.top - card.bottom;
+          // ignore: avoid_print
+          print('${c.$1}: 카드~시작 간격 ${gap.toStringAsFixed(1)}');
+          // 구역 사이 간격이 고르게 나뉘므로 아주 큰 화면(820 등)에서도 이 정도 안쪽
+          expect(gap, lessThanOrEqualTo(120));
         }
       });
     }
