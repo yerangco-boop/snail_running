@@ -347,6 +347,15 @@ OpenStreetMap via `flutter_map` + OSM standard tiles. No API key required. `MapC
 - 원본 이미지·영상·시안 HTML은 저장소 밖(`Documents\달팽이_디자인_이미지`, 구글 드라이브 `달팽이앱`). 앱 적용 계획은 `docs/ui_apply_plan.md`, 디자인 정리는 `docs/design_asset_plan.md`.
 - 힉스필드 Starter는 2026-12-02 갱신 전에 사용자가 직접 해지해야 함.
 
+## 이력 고도 그래프 (2026-11-15, `altitude-history` 브랜치 — **아직 병합·배포 안 함**)
+- 사용자 요청: 이력 상세에서 달린 경로의 고도를 그래프와 수치로 확인. "일단 저장해 두고 나중에 다른 내용과 함께 업데이트"
+- `ui-redesign`(11/03)에서 갈라짐. 병합 시 `.github/workflows/check-altitude.yml`(이 브랜치 전용 검사)은 지워도 됨
+- 고도 원본: 러닝 중 GPS `Position.altitude`를 경로 좌표와 같은 순서로 저장(`routeAltitudes`, DB v10 `route_alt_json`). 0.0(고도 없음)은 null
+- 표시: 이력 상세 '고도' 카드 — 오르막·내리막·고도차 + 거리별 높이 그래프. **출발점 = 0m 상대 높이**(안드로이드 GPS 고도는 타원체 기준이라 해발보다 20~30m 높음)
+- 계산(`lib/utils/elevation_profile.dart`): 11점 이동평균, 3m 미만 방향 전환 무시, 그래프 세로 최소 10m. **세 값 모두 임의로 정한 값 — 사용자 확인 필요**
+- 한계: GPS 고도 오차가 천천히 흘러가면 평지(옥상 트랙)에서도 오르막이 잡힐 수 있음. 정확도를 올리려면 기압계(sensors_plus 6.x 이상 필요 → 가속도계 코드 영향 검토 필요) 또는 지형 고도 API 검토
+- 이전 기록에는 고도가 없어 안내 문구만 표시. 실제 폰 실측 검증 전
+
 ## UI 디자인 기준 (2026-10-02 확정, UI 개편용) — 일부는 위 최신 결정으로 대체됨
 
 이번 개편은 **UI 디자인만** 바꾼다. 기능·설정 값·계산 로직(GPS·바퀴·걸음·메트로놈·DB)은 건드리지 않는다.
