@@ -23,6 +23,9 @@ class WorkoutRecord {
   // 각 바퀴가 완료된 시점의 실제 GPS 누적 거리(km) — 랩별 누적거리/구간페이스를
   // 사용자가 입력한 "코스 1바퀴 거리" 대신 실측값으로 계산하기 위해 저장
   final List<double>? lapSplitDistanceKm;
+  // routePoints와 같은 순서의 GPS 고도(m, WGS84 타원체 기준). 고도를 못 받은 점은 null.
+  // 2026-11-15 이전 기록에는 없음
+  final List<double?>? routeAltitudes;
 
   const WorkoutRecord({
     this.id,
@@ -41,6 +44,7 @@ class WorkoutRecord {
     this.lapCompletionPoints,
     this.lapSplitSeconds,
     this.lapSplitDistanceKm,
+    this.routeAltitudes,
   });
 
   Map<String, dynamic> toMap() => {
@@ -68,6 +72,11 @@ class WorkoutRecord {
     'lap_dist_json': (lapSplitDistanceKm != null && lapSplitDistanceKm!.isNotEmpty)
         ? jsonEncode(lapSplitDistanceKm)
         : null,
+    'route_alt_json': (routeAltitudes != null && routeAltitudes!.isNotEmpty)
+        ? jsonEncode(routeAltitudes!
+            .map((a) => a == null ? null : double.parse(a.toStringAsFixed(1)))
+            .toList())
+        : null,
   };
 
   factory WorkoutRecord.fromMap(Map<String, dynamic> map) => WorkoutRecord(
@@ -88,7 +97,18 @@ class WorkoutRecord {
     lapCompletionPoints: _parseRouteJson(map['lap_points_json'] as String?),
     lapSplitSeconds: _parseIntListJson(map['lap_splits_json'] as String?),
     lapSplitDistanceKm: _parseDoubleListJson(map['lap_dist_json'] as String?),
+    routeAltitudes: _parseNullableDoubleListJson(map['route_alt_json'] as String?),
   );
+
+  static List<double?>? _parseNullableDoubleListJson(String? json) {
+    if (json == null || json.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(json) as List;
+      return decoded.map((e) => (e as num?)?.toDouble()).toList();
+    } catch (_) {
+      return null;
+    }
+  }
 
   static List<int>? _parseIntListJson(String? json) {
     if (json == null || json.isEmpty) return null;

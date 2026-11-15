@@ -1,0 +1,27 @@
+# 고도 그래프 작업 브랜치 전용 검사: 분석 + 단위 테스트만 돌림.
+# APK를 만들거나 릴리스를 올리지 않으므로 정식 앱·미리보기 앱에는 영향 없음.
+# 이 브랜치를 ui-redesign에 합칠 때 이 파일은 지워도 됨.
+name: Check (altitude-history)
+
+on:
+  push:
+    branches: [altitude-history]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+      - name: Test
+        run: flutter test

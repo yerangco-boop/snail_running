@@ -247,6 +247,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   // 지도에 그릴 주행 경로
   final List<LatLng> _routePoints = [];
+  // _routePoints와 같은 순서의 GPS 고도(m). 이력 상세의 고도 그래프용 (2026-11-15).
+  // 안드로이드는 고도가 없는 측위에 0.0을 주므로 그 경우 null로 둠
+  final List<double?> _routeAltitudes = [];
+
+  void _addRoutePoint(LatLng point, double altitude) {
+    _routePoints.add(point);
+    _routeAltitudes.add(altitude == 0.0 || !altitude.isFinite ? null : altitude);
+  }
 
   // ── 케이던스(걸음수/분) — 가속도계 피크 감지 방식 ─────────────────────────
   StreamSubscription<UserAccelerometerEvent>? _accelSub;
@@ -566,6 +574,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       lapCompletionPoints: List<LatLng>.from(_lapCompletionPoints),
       lapSplitSeconds: List<int>.from(_lapSplitSeconds),
       lapSplitDistanceKm: List<double>.from(_lapSplitDistanceKm),
+      routeAltitudes: List<double?>.from(_routeAltitudes),
     ).save();
   }
 
@@ -617,6 +626,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         routePoints: snap.routePoints,
         lapCompletionPoints: snap.lapCompletionPoints,
         lapSplitSeconds: snap.lapSplitSeconds,
+        routeAltitudes: snap.routeAltitudes,
       ));
       FileLogger.instance.log('[Recovery] 스냅샷에서 기록 복구: ${snap.distanceKm}km ${snap.seconds}s');
       if (mounted) {
@@ -1134,7 +1144,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
           setState(() {
             _distanceKm += cappedMeters / 1000.0;
-            if (fixReliable) _routePoints.add(smoothed);
+            if (fixReliable) _addRoutePoint(smoothed, pos.altitude);
             _checkAudioGuide();
           });
           if (!fixReliable && learnedLap != null) _checkDistanceLap(learnedLap);
@@ -1143,7 +1153,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _stepsAtLastGpsFix = _totalSteps;
           _lastGpsFixAccuracy = pos.accuracy;
         } else {
-          if (fixReliable) _routePoints.add(smoothed);
+          if (fixReliable) _addRoutePoint(smoothed, pos.altitude);
           _lastGpsPoint = rawPoint;
           _lastGpsTime = now;
           _stepsAtLastGpsFix = _totalSteps;
@@ -1442,6 +1452,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       lapCompletionPoints: List<LatLng>.from(_lapCompletionPoints),
       lapSplitSeconds: List<int>.from(_lapSplitSeconds),
       lapSplitDistanceKm: List<double>.from(_lapSplitDistanceKm),
+      routeAltitudes: List<double?>.from(_routeAltitudes),
     );
     await DatabaseService.instance.insertWorkout(record);
     _loadStreak();
@@ -1482,6 +1493,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _lastStepAt = null;
       _recentStepTimestamps.clear();
       _routePoints.clear();
+      _routeAltitudes.clear();
       _emaPoint = null;
       _lapStartPoint = null;
       _lapCount = 0;
