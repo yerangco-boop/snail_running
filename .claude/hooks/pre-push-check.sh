@@ -2,7 +2,8 @@
 # PreToolUse(Bash) 훅: `git push` 직전에 dart analyze(오류만 실패) + flutter test를 돌린다.
 # 실패하면 마지막 40줄을 stderr로 내고 exit 2(→ push 차단). Flutter 없는 PC(노트북)는 그냥 통과.
 input=$(cat)
-echo "$input" | grep -Eq '"command"[[:space:]]*:[[:space:]]*"[^"]*git push' || exit 0
+# 명령 안의 이스케이프된 따옴표(\")를 먼저 지워야 `cd "..."; git push`처럼 따옴표 뒤에 오는 push도 잡힘
+echo "$input" | sed 's/\\"//g' | grep -Eq '"command"[[:space:]]*:[[:space:]]*"[^"]*git push' || exit 0
 command -v flutter >/dev/null 2>&1 || exit 0
 
 cd "${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}" || exit 0
