@@ -1,0 +1,2 @@
+# bash 스크립트는 Windows에서 받아도 LF 유지 (CRLF면 훅이 깨질 수 있음)
+*.sh text eol=lf
