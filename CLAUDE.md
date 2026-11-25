@@ -47,6 +47,7 @@ flutter test test/some_test.dart   # Single test file
 ### Metronome & platform split
 `MetronomeService` wraps a `ClickPlayer` selected by a conditional import:
 - **Mobile/desktop** (`click_player_stub.dart`): uses `audioplayers` with `AudioFocus.none` and, on Android, `contentType: music` / `usageType: media` (routes through the normal media volume slider — using `sonification`/`assistanceSonification` instead routes to the separate system/accessibility sound volume, which is often muted independently and made the metronome silent on real devices even with media volume up and TTS working fine). On iOS: `AVAudioSession.ambient + mixWithOthers` so the metronome overlays music apps.
+  - **채널 자동 전환 (2026-11-25)**: 플레이어를 두 개 둠 — 평소용(media)과 통화용(`usageType: alarm`). `MainActivity.kt`의 `snail_running/audio` 통로(`isInCall`, `AudioManager.mode` 조회)로 1초마다 통화 여부를 확인해 **통화 중에만** 통화용으로 울리고, 통화가 끝나면 평소용 플레이어를 새로 만들어 복귀. 알람 채널 하나로 항상 울리던 방식(11/3 기본값 변경)은 박자마다 음악이 같이 끊겨서 폐기. "통화 중에도 재생" 스위치가 꺼져 있으면 통화용 플레이어를 만들지 않음(통화 중 무음). 확인 항목은 `TEST_CHECKLIST.md`
 - **Web** (`click_player_web.dart`): synthesises a 1500 Hz sine burst via Web Audio API through `dart:js`, bypassing the missing `OscillatorNode.start()` Dart binding.
 
 The click sound asset is `assets/sounds/click.wav` (used only on native).

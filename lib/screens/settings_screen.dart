@@ -513,8 +513,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               alignment: Alignment.centerLeft,
               child: Text(
                 on
-                    ? '알람 스트림으로 재생됩니다. 소리가 안 나면 미디어 볼륨이 아니라 '
-                        '휴대폰의 알람 볼륨을 올려주세요.'
+                    ? '평소에는 음악과 함께 미디어 볼륨으로 재생되고, 통화 중에만 알람 채널로 '
+                        '바뀝니다. 통화 중에 소리가 안 나면 휴대폰의 알람 볼륨을 올려주세요.'
                     : '통화 중에는 안드로이드가 미디어 소리를 막아 메트로놈이 들리지 않습니다.',
                 style: TextStyle(fontSize: 12, color: _s.preset.grey, height: 1.35),
               ),
