@@ -25,6 +25,9 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # 최신판 자동 추적 금지: 3.50으로 올라간 뒤(2026-11-11~) APK 빌드가 연속 실패해
+          # 마지막으로 성공한 버전에 고정. 올릴 때는 미리보기 빌드로 먼저 확인할 것
+          flutter-version: 3.47.9
           cache: true
 
       - name: Install dependencies
