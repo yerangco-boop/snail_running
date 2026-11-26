@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import '../widgets/clay/clay_card.dart';
@@ -5,6 +6,7 @@ import '../theme/tokens.dart';
 import '../models/app_settings.dart';
 import '../models/workout_record.dart';
 import '../utils/route_utils.dart';
+import '../utils/elevation_profile.dart';
 
 // 이력 카드 탭 시 그날 기록을 한 화면에 모아 보여주는 상세 화면 —
 // 상단 지도(경로 + km/랩 마커) + 통계 카드 + 랩별 기록을 스크롤로 이어 붙임
@@ -24,10 +26,20 @@ class RouteDetailScreen extends StatefulWidget {
 
 class _RouteDetailScreenState extends State<RouteDetailScreen> {
   final MapController _mapController = MapController();
+  // 고도 기록이 없거나(2026-11-15 이전 기록) 너무 적으면 null
+  ElevationProfile? _elevation;
 
   @override
   void initState() {
     super.initState();
+    final r = widget.record;
+    if (r.hasRoute && r.routeAltitudes != null) {
+      _elevation = ElevationProfile.compute(
+        r.routePoints!,
+        r.routeAltitudes!,
+        totalDistanceKm: r.distanceKm,
+      );
+    }
     if (widget.record.hasRoute) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _fitToRoute());
     }
@@ -77,6 +89,10 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
           _sectionHeader('기록'),
           const SizedBox(height: 8),
           _buildStatsCard(),
+          const SizedBox(height: 16),
+          _sectionHeader('고도'),
+          const SizedBox(height: 8),
+          _buildElevationCard(),
           if (record.lapCount > 0) ...[
             const SizedBox(height: 16),
             _sectionHeader('랩 기록'),
@@ -233,6 +249,73 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
             ),
           ],
         ),
+      );
+
+  // ── 고도 ──────────────────────────────────────────────────────────────────
+  Widget _buildElevationCard() {
+    final e = _elevation;
+    if (e == null) {
+      return const ClayCard(
+        radius: 24,
+        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        child: Text(
+          '고도 기록이 없는 러닝이에요.\n고도 기능을 넣은 버전부터 달린 기록에 표시됩니다.',
+          style: TextStyle(fontSize: 13, color: Tokens.inkMuted, height: 1.5),
+        ),
+      );
+    }
+    return ClayCard(
+      radius: 24,
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _elevStat('오르막', '+${e.ascentM.round()}', 'm')),
+              Expanded(child: _elevStat('내리막', '-${e.descentM.round()}', 'm')),
+              Expanded(child: _elevStat('고도차', '${e.rangeM.round()}', 'm')),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 150,
+            child: CustomPaint(painter: _ElevationChartPainter(e)),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            '출발 지점을 0m로 본 높이예요. GPS 측정값이라 몇 m 오차가 있을 수 있어요.',
+            style: TextStyle(fontSize: 11, color: Tokens.inkMuted, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _elevStat(String label, String value, String unit) => Column(
+        children: [
+          Text(label, style: const TextStyle(fontSize: 12, color: Tokens.inkMuted)),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: Tokens.ink,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+              const SizedBox(width: 2),
+              Text(unit,
+                  style: const TextStyle(fontSize: 13, color: Tokens.inkMuted)),
+            ],
+          ),
+        ],
       );
 
   // ── 랩 기록 ───────────────────────────────────────────────────────────────
@@ -422,4 +505,120 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
           ),
         ),
       );
+}
+
+// 거리(가로) × 출발점 기준 높이(세로) 면 그래프.
+// 평지에서 몇 m 잡음이 산처럼 보이지 않도록 세로 범위는 최소 10m로 잡는다
+class _ElevationChartPainter extends CustomPainter {
+  _ElevationChartPainter(this.e);
+
+  final ElevationProfile e;
+
+  static const double _minSpanM = 10;
+  static const double _leftAxis = 40;
+  static const double _bottomAxis = 18;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final xs = e.distanceKm;
+    final ys = e.heightM;
+    if (xs.length < 2) return;
+
+    var lo = e.minM, hi = e.maxM;
+    if (hi - lo < _minSpanM) {
+      final mid = (hi + lo) / 2;
+      lo = mid - _minSpanM / 2;
+      hi = mid + _minSpanM / 2;
+    }
+    final x0 = xs.first;
+    final xSpan = (xs.last - x0) <= 0 ? 1.0 : xs.last - x0;
+
+    final plot = Rect.fromLTRB(_leftAxis, 6, size.width, size.height - _bottomAxis);
+    Offset at(int i) => Offset(
+          plot.left + (xs[i] - x0) / xSpan * plot.width,
+          plot.bottom - (ys[i] - lo) / (hi - lo) * plot.height,
+        );
+
+    // 점이 많으면 화면 폭 정도로 솎아서 그림
+    final step = math.max(1, (xs.length / plot.width).floor());
+    final line = Path()..moveTo(at(0).dx, at(0).dy);
+    for (var i = step; i < xs.length; i += step) {
+      final p = at(i);
+      line.lineTo(p.dx, p.dy);
+    }
+    final last = at(xs.length - 1);
+    line.lineTo(last.dx, last.dy);
+
+    final area = Path.from(line)
+      ..lineTo(last.dx, plot.bottom)
+      ..lineTo(plot.left, plot.bottom)
+      ..close();
+
+    final grid = Paint()
+      ..color = Tokens.inkMuted.withValues(alpha: 0.18)
+      ..strokeWidth = 1;
+    canvas.drawLine(plot.topLeft, plot.topRight, grid);
+    canvas.drawLine(plot.bottomLeft, plot.bottomRight, grid);
+    if (lo < 0 && hi > 0) {
+      final zeroY = plot.bottom - (0 - lo) / (hi - lo) * plot.height;
+      canvas.drawLine(Offset(plot.left, zeroY), Offset(plot.right, zeroY), grid);
+    }
+
+    canvas.drawPath(
+      area,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Tokens.coralFace.withValues(alpha: 0.40),
+            Tokens.coralFace.withValues(alpha: 0.05),
+          ],
+        ).createShader(plot),
+    );
+    canvas.drawPath(
+      line,
+      Paint()
+        ..color = Tokens.coralFace
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5
+        ..strokeJoin = StrokeJoin.round
+        ..strokeCap = StrokeCap.round,
+    );
+
+    _label(canvas, _fmtM(hi), Offset(0, plot.top), alignBottom: false);
+    _label(canvas, _fmtM(lo), Offset(0, plot.bottom), alignBottom: true);
+    _label(canvas, '0 km', Offset(plot.left, size.height - _bottomAxis + 4));
+    _label(canvas, '${xs.last.toStringAsFixed(2)} km',
+        Offset(plot.right, size.height - _bottomAxis + 4),
+        alignRight: true);
+  }
+
+  String _fmtM(double v) {
+    final r = v.round();
+    return r > 0 ? '+$r m' : '$r m';
+  }
+
+  void _label(Canvas canvas, String text, Offset pos,
+      {bool alignRight = false, bool? alignBottom}) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          fontSize: 11,
+          color: Tokens.inkMuted,
+          fontFeatures: [FontFeature.tabularFigures()],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final dx = alignRight ? pos.dx - tp.width : pos.dx;
+    var dy = pos.dy;
+    if (alignBottom == true) dy -= tp.height;
+    if (alignBottom == false) dy -= 1;
+    tp.paint(canvas, Offset(dx, dy));
+  }
+
+  @override
+  bool shouldRepaint(covariant _ElevationChartPainter old) => old.e != e;
 }
