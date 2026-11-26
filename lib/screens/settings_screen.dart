@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -11,6 +14,7 @@ import '../widgets/clay/clay_card.dart';
 import '../services/database_service.dart';
 import '../services/file_logger.dart';
 import '../services/metronome_service.dart';
+import '../utils/workout_backup.dart';
 
 class SettingsScreen extends StatefulWidget {
   final AppSettings settings;
@@ -160,6 +164,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _update(VoidCallback fn) {
     setState(fn);
     widget.onChanged();
+  }
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  // 모든 러닝 기록을 파일 하나로 저장 — 저장할 위치(다운로드 폴더 등)는 사용자가 고름.
+  // 미리보기 앱 → 정식 앱처럼 다른 앱으로 기록을 옮기거나 폰을 바꿀 때 씀
+  Future<void> _exportWorkouts() async {
+    try {
+      final records = await DatabaseService.instance.getWorkouts();
+      if (records.isEmpty) {
+        _toast('내보낼 기록이 없습니다.');
+        return;
+      }
+      final now = DateTime.now();
+      final stamp = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+      final saved = await FilePicker.saveFile(
+        fileName: '달팽이러닝_기록_${stamp}_${records.length}건.json',
+        bytes: Uint8List.fromList(utf8.encode(encodeWorkoutBackup(records, now: now))),
+      );
+      if (saved == null) return; // 사용자가 취소
+      _toast('기록 ${records.length}건을 파일로 저장했습니다.');
+    } catch (e) {
+      _toast('기록을 내보내지 못했습니다: $e');
+    }
+  }
+
+  // 내보낸 파일을 골라 이 앱의 이력에 추가. 이미 있는 기록(시작 시각·운동 시간이 같은 것)은 건너뜀
+  Future<void> _importWorkouts() async {
+    try {
+      final picked = await FilePicker.pickFiles(withData: true);
+      final bytes = picked?.files.single.bytes;
+      if (bytes == null) return; // 사용자가 취소
+      final incoming = decodeWorkoutBackup(utf8.decode(bytes));
+      final existing = await DatabaseService.instance.getWorkouts();
+      final fresh = selectNewWorkouts(existing, incoming);
+      for (final r in fresh) {
+        await DatabaseService.instance.insertWorkout(r);
+      }
+      final skipped = incoming.length - fresh.length;
+      _toast('기록 ${fresh.length}건을 가져왔습니다.'
+          '${skipped > 0 ? ' (이미 있는 $skipped건은 건너뜀)' : ''}');
+    } on FormatException catch (e) {
+      _toast(e.message);
+    } catch (e) {
+      _toast('기록을 가져오지 못했습니다: $e');
+    }
   }
 
   // 실외 테스트 진단 로그(GPS/케이던스/바퀴)를 USB 연결 없이도 확인할 수 있도록
@@ -399,6 +452,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildDuringCallCard(),
 
             const SizedBox(height: 28),
+
+            // ── 기록 옮기기 ───────────────────────────────────────────────────
+            // 웹은 기록 DB 자체가 없어 숨김
+            if (!kIsWeb) ...[
+              _sectionHeader("기록 옮기기"),
+              const SizedBox(height: 8),
+              _settingCard(
+                icon: Icons.upload_file_outlined,
+                label: "기록 내보내기 (파일로 저장)",
+                trailing: const SizedBox.shrink(),
+                onTap: _exportWorkouts,
+              ),
+              const SizedBox(height: 8),
+              _settingCard(
+                icon: Icons.download_outlined,
+                label: "기록 가져오기 (파일에서 읽기)",
+                trailing: const SizedBox.shrink(),
+                onTap: _importWorkouts,
+              ),
+              const SizedBox(height: 28),
+            ],
 
             // 테마 선택 영역은 UI 개편으로 숨김 (한 가지 룩 사용)
 
