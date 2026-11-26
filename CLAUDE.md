@@ -250,7 +250,7 @@ OpenStreetMap via `flutter_map` + OSM standard tiles. No API key required. `MapC
 - 원본 이미지·영상·시안 HTML은 저장소 밖(`Documents\달팽이_디자인_이미지`, 구글 드라이브 `달팽이앱`). 앱 적용 계획은 `docs/ui_apply_plan.md`, 디자인 정리는 `docs/design_asset_plan.md`.
 - 힉스필드 Starter는 2026-12-02 갱신 전에 사용자가 직접 해지해야 함.
 
-## 이력 고도 그래프 (2026-11-15, `altitude-history` 브랜치 — **아직 병합·배포 안 함**)
+## 이력 고도 그래프 (2026-11-15 작성, **2026-11-26 v37에 병합** — 폰 확인 없이 배포, 사용자 본인만 쓰는 단계라 승인)
 - 사용자 요청: 이력 상세에서 달린 경로의 고도를 그래프와 수치로 확인. "일단 저장해 두고 나중에 다른 내용과 함께 업데이트"
 - `ui-redesign`(11/03)에서 갈라짐. 병합 시 `.github/workflows/check-altitude.yml`(이 브랜치 전용 검사)은 지워도 됨
 - 고도 원본: 러닝 중 GPS `Position.altitude`를 경로 좌표와 같은 순서로 저장(`routeAltitudes`, DB v10 `route_alt_json`). 0.0(고도 없음)은 null
