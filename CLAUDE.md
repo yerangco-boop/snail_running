@@ -262,7 +262,7 @@ OpenStreetMap via `flutter_map` + OSM standard tiles. No API key required. `MapC
 - 한계: GPS 고도 오차가 천천히 흘러가면 평지(옥상 트랙)에서도 오르막이 잡힐 수 있음. 정확도를 올리려면 기압계(sensors_plus 6.x 이상 필요 → 가속도계 코드 영향 검토 필요) 또는 지형 고도 API 검토
 - 이전 기록에는 고도가 없어 안내 문구만 표시. 실제 폰 실측 검증 전
 
-## 기압계 고도 시험 (2026-11-26, **`ui-redesign` 브랜치에만 있음 — 폰 비교 확인 전에는 main에 병합 금지**)
+## 기압계 고도 시험 (2026-11-26, **v39로 정식 앱에 포함** — 사용자가 "혼자 쓰는 단계라 미리보기와 구별할 필요 없다"고 결정. 폰 실측 확인 전)
 - 계기: 11/26 원본 고도 1,818개를 보니 평평한 운동장에서 GPS 고도가 108 → 112 → 114 → 115m로 계단식으로 흘러감(정밀 구간에서도). 다듬는 계산으로는 못 고침
 - 방식: `MainActivity.kt`의 `snail_running/pressure` 통로로 안드로이드 기압 센서(hPa)를 직접 읽음. sensors_plus는 올리지 않음(걸음 측정 코드 보호). `lib/services/barometer.dart`가 지수평균(계수 0.1) 후 러닝 시작 시점 기압을 기준으로 상대 높이 계산
 - 저장: 경로 점마다 `routeBaroHeights`(DB v11 `route_baro_json`), GPS 고도(`routeAltitudes`)도 그대로 함께 저장 → 내보내기 파일로 둘을 비교
