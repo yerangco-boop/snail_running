@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -171,6 +170,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  // 안드로이드 기본 파일 저장 창·선택 창을 띄우는 통로 (MainActivity.kt)
+  static const _fileChannel = MethodChannel('snail_running/files');
+
   // 모든 러닝 기록을 파일 하나로 저장 — 저장할 위치(다운로드 폴더 등)는 사용자가 고름.
   // 미리보기 앱 → 정식 앱처럼 다른 앱으로 기록을 옮기거나 폰을 바꿀 때 씀
   Future<void> _exportWorkouts() async {
@@ -182,11 +184,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       final now = DateTime.now();
       final stamp = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
-      final saved = await FilePicker.saveFile(
-        fileName: '달팽이러닝_기록_${stamp}_${records.length}건.json',
-        bytes: Uint8List.fromList(utf8.encode(encodeWorkoutBackup(records, now: now))),
-      );
-      if (saved == null) return; // 사용자가 취소
+      final saved = await _fileChannel.invokeMethod<bool>('saveFile', {
+        'fileName': '달팽이러닝_기록_${stamp}_${records.length}건.json',
+        'bytes': Uint8List.fromList(utf8.encode(encodeWorkoutBackup(records, now: now))),
+      });
+      if (saved != true) return; // 사용자가 취소
       _toast('기록 ${records.length}건을 파일로 저장했습니다.');
     } catch (e) {
       _toast('기록을 내보내지 못했습니다: $e');
@@ -196,8 +198,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // 내보낸 파일을 골라 이 앱의 이력에 추가. 이미 있는 기록(시작 시각·운동 시간이 같은 것)은 건너뜀
   Future<void> _importWorkouts() async {
     try {
-      final picked = await FilePicker.pickFiles(withData: true);
-      final bytes = picked?.files.single.bytes;
+      final bytes = await _fileChannel.invokeMethod<Uint8List>('pickFile');
       if (bytes == null) return; // 사용자가 취소
       final incoming = decodeWorkoutBackup(utf8.decode(bytes));
       final existing = await DatabaseService.instance.getWorkouts();

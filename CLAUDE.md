@@ -70,7 +70,7 @@ Lap counting (`_checkLapCompletion`) counts a loop when the runner moves `_lapMi
 `DatabaseService` is a singleton wrapping `sqflite` (`snail_running.db`). All methods guard against web with `kIsWeb` checks (sqflite has no web support). Schema: single `workouts` table — `id, date, distance_km, duration_seconds, avg_pace_sec`.
 
 ### 기록 내보내기·가져오기 (2026-11-26, v38)
-설정의 "기록 옮기기"에서 모든 러닝 기록을 JSON 파일 하나로 저장하고(`file_picker`의 저장 창, 위치는 사용자가 고름), 다른 앱·다른 폰에서 그 파일을 골라 이력에 추가함. 변환은 `lib/utils/workout_backup.dart`(DB의 `toMap`과 같은 모양, id 제외). 시작 시각과 운동 시간이 같은 기록은 중복으로 보고 건너뜀. 계기: 미리보기 앱(`.preview`)은 정식 앱과 저장소가 달라 그 사이 기록 6건이 미리보기 앱에만 남았음.
+설정의 "기록 옮기기"에서 모든 러닝 기록을 JSON 파일 하나로 저장하고(안드로이드 기본 파일 저장 창을 `MainActivity.kt`의 `snail_running/files` 통로로 띄움, 위치는 사용자가 고름. `file_picker` 11.0.3은 넣자마자 APK 빌드가 실패해 쓰지 않음), 다른 앱·다른 폰에서 그 파일을 골라 이력에 추가함. 변환은 `lib/utils/workout_backup.dart`(DB의 `toMap`과 같은 모양, id 제외). 시작 시각과 운동 시간이 같은 기록은 중복으로 보고 건너뜀. 계기: 미리보기 앱(`.preview`)은 정식 앱과 저장소가 달라 그 사이 기록 6건이 미리보기 앱에만 남았음.
 
 ### 업데이트 알림 (2026-09-28, v36)
 스토어 밖 APK 배포라 설치한 사람은 새 버전이 나온 걸 알 수 없어서 추가. `lib/services/update_checker.dart`가
