@@ -3,9 +3,14 @@ package com.example.snail_running
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.media.AudioManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
@@ -30,6 +35,34 @@ class MainActivity : FlutterActivity() {
                     result.notImplemented()
                 }
             }
+
+        // 기압 센서(hPa) 값을 흘려보내는 통로 — 고도를 GPS 대신 기압 변화로 재는 시험용(2026-11-26).
+        // 센서가 없는 기기는 아무 값도 보내지 않음. 권한 필요 없음
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "snail_running/pressure")
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                private var listener: SensorEventListener? = null
+
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    val manager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+                    val sensor = manager.getDefaultSensor(Sensor.TYPE_PRESSURE)
+                    if (sensor == null || events == null) return
+                    val l = object : SensorEventListener {
+                        override fun onSensorChanged(event: SensorEvent) {
+                            events.success(event.values[0].toDouble())
+                        }
+
+                        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+                    }
+                    listener = l
+                    manager.registerListener(l, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    val manager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+                    listener?.let { manager.unregisterListener(it) }
+                    listener = null
+                }
+            })
 
         // 저장 위치·읽을 파일을 사용자가 직접 고르는 방식이라 저장소 권한이 필요 없음
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "snail_running/files")

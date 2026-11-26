@@ -41,6 +41,9 @@ class ElevationProfile {
     List<LatLng> points,
     List<double?> altitudes, {
     double? totalDistanceKm,
+    // 기압계 높이처럼 잡음이 작은 값은 덜 다듬고 더 작은 오르내림도 인정할 수 있게 열어 둠
+    int smoothRadius = ElevationProfile.smoothRadius,
+    double climbThresholdM = ElevationProfile.climbThresholdM,
   }) {
     final n = math.min(points.length, altitudes.length);
     if (n < minPoints) return null;

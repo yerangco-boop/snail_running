@@ -26,6 +26,9 @@ class WorkoutRecord {
   // routePoints와 같은 순서의 GPS 고도(m, WGS84 타원체 기준). 고도를 못 받은 점은 null.
   // 2026-11-15 이전 기록에는 없음
   final List<double?>? routeAltitudes;
+  // routePoints와 같은 순서의 기압계 높이(m, 러닝 시작 시점 = 0). 기압 센서가 없거나
+  // 값을 못 받은 점은 null. GPS 고도가 평지에서도 수 m씩 흘러가서 넣은 시험용 (2026-11-26)
+  final List<double?>? routeBaroHeights;
 
   const WorkoutRecord({
     this.id,
@@ -45,6 +48,7 @@ class WorkoutRecord {
     this.lapSplitSeconds,
     this.lapSplitDistanceKm,
     this.routeAltitudes,
+    this.routeBaroHeights,
   });
 
   Map<String, dynamic> toMap() => {
@@ -77,6 +81,11 @@ class WorkoutRecord {
             .map((a) => a == null ? null : double.parse(a.toStringAsFixed(1)))
             .toList())
         : null,
+    'route_baro_json': (routeBaroHeights != null && routeBaroHeights!.any((h) => h != null))
+        ? jsonEncode(routeBaroHeights!
+            .map((h) => h == null ? null : double.parse(h.toStringAsFixed(2)))
+            .toList())
+        : null,
   };
 
   factory WorkoutRecord.fromMap(Map<String, dynamic> map) => WorkoutRecord(
@@ -98,6 +107,7 @@ class WorkoutRecord {
     lapSplitSeconds: _parseIntListJson(map['lap_splits_json'] as String?),
     lapSplitDistanceKm: _parseDoubleListJson(map['lap_dist_json'] as String?),
     routeAltitudes: _parseNullableDoubleListJson(map['route_alt_json'] as String?),
+    routeBaroHeights: _parseNullableDoubleListJson(map['route_baro_json'] as String?),
   );
 
   static List<double?>? _parseNullableDoubleListJson(String? json) {

@@ -22,6 +22,7 @@ void main() {
     lapSplitSeconds: const [170, 345],
     lapSplitDistanceKm: const [0.28, 0.56],
     routeAltitudes: const [80.5, null],
+    routeBaroHeights: const [0.0, 1.25],
   );
   final plain = WorkoutRecord(
     date: DateTime(2026, 11, 10, 19, 0),

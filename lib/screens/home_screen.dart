@@ -19,6 +19,7 @@ import '../services/weather_service.dart';
 import '../services/file_logger.dart';
 import '../services/location_settings_factory.dart';
 import '../services/background_permissions.dart';
+import '../services/barometer.dart';
 import '../services/workout_snapshot.dart';
 import '../services/update_checker.dart';
 import '../utils/route_utils.dart';
@@ -251,9 +252,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 안드로이드는 고도가 없는 측위에 0.0을 주므로 그 경우 null로 둠
   final List<double?> _routeAltitudes = [];
 
+  // _routePoints와 같은 순서의 기압계 높이(m, 러닝 시작 = 0). 센서가 없으면 전부 null
+  final List<double?> _routeBaroHeights = [];
+  final Barometer _barometer = Barometer();
+
   void _addRoutePoint(LatLng point, double altitude) {
     _routePoints.add(point);
     _routeAltitudes.add(altitude == 0.0 || !altitude.isFinite ? null : altitude);
+    _routeBaroHeights.add(_barometer.relativeHeightM);
   }
 
   // ── 케이던스(걸음수/분) — 가속도계 피크 감지 방식 ─────────────────────────
@@ -542,6 +548,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _accelSub?.cancel();
     _cadenceDiagnosticTimer?.cancel();
     _snapshotTimer?.cancel();
+    _barometer.stop();
     _metronome.dispose();
     _mapController.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -575,6 +582,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       lapSplitSeconds: List<int>.from(_lapSplitSeconds),
       lapSplitDistanceKm: List<double>.from(_lapSplitDistanceKm),
       routeAltitudes: List<double?>.from(_routeAltitudes),
+      routeBaroHeights: List<double?>.from(_routeBaroHeights),
     ).save();
   }
 
@@ -627,6 +635,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         lapCompletionPoints: snap.lapCompletionPoints,
         lapSplitSeconds: snap.lapSplitSeconds,
         routeAltitudes: snap.routeAltitudes,
+        routeBaroHeights: snap.routeBaroHeights,
       ));
       FileLogger.instance.log('[Recovery] 스냅샷에서 기록 복구: ${snap.distanceKm}km ${snap.seconds}s');
       if (mounted) {
@@ -843,6 +852,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _workoutStartedAt = DateTime.now();
     // 화면이 꺼진 뒤에도 위치 콜백이 살아있으려면 알림 권한 + 배터리 최적화 예외가 필요
     await BackgroundPermissions.ensureForBackgroundTracking();
+    // 기압계 기준(0m)은 러닝을 시작할 때 한 번만 잡고, 일시정지·재개에서는 유지함
+    _barometer.start();
     await _startGpsTracking();
     _startStepDetection();
     _launchTimer();
@@ -1418,6 +1429,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _snapshotTimer?.cancel();
     _metronome.stop();
     _applyWakelock(false);
+    _barometer.stop();
     setState(() => _workoutState = WorkoutState.idle);
     _announceWorkoutSummary();
     // 정상 종료로 DB에 저장되므로 복구용 스냅샷은 더 이상 필요 없음
@@ -1453,6 +1465,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       lapSplitSeconds: List<int>.from(_lapSplitSeconds),
       lapSplitDistanceKm: List<double>.from(_lapSplitDistanceKm),
       routeAltitudes: List<double?>.from(_routeAltitudes),
+      routeBaroHeights: List<double?>.from(_routeBaroHeights),
     );
     await DatabaseService.instance.insertWorkout(record);
     _loadStreak();
@@ -1494,6 +1507,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _recentStepTimestamps.clear();
       _routePoints.clear();
       _routeAltitudes.clear();
+      _routeBaroHeights.clear();
       _emaPoint = null;
       _lapStartPoint = null;
       _lapCount = 0;

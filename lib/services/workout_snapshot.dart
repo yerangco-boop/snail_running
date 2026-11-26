@@ -21,6 +21,7 @@ class WorkoutSnapshot {
   final List<int> lapSplitSeconds;
   final List<double> lapSplitDistanceKm;
   final List<double?> routeAltitudes;
+  final List<double?> routeBaroHeights;
 
   const WorkoutSnapshot({
     required this.savedAt,
@@ -37,6 +38,7 @@ class WorkoutSnapshot {
     required this.lapSplitSeconds,
     required this.lapSplitDistanceKm,
     this.routeAltitudes = const [],
+    this.routeBaroHeights = const [],
   });
 
   static const _key = 'workoutSnapshot';
@@ -74,6 +76,9 @@ class WorkoutSnapshot {
         'routeAltitudes': routeAltitudes
             .map((a) => a == null ? null : double.parse(a.toStringAsFixed(1)))
             .toList(),
+        'routeBaroHeights': routeBaroHeights
+            .map((h) => h == null ? null : double.parse(h.toStringAsFixed(2)))
+            .toList(),
       };
 
   static WorkoutSnapshot? _fromJson(Map<String, dynamic> m) {
@@ -96,6 +101,8 @@ class WorkoutSnapshot {
             (m['lapSplitDistanceKm'] as List?)?.map((e) => (e as num).toDouble()).toList() ?? [],
         routeAltitudes:
             (m['routeAltitudes'] as List?)?.map((e) => (e as num?)?.toDouble()).toList() ?? [],
+        routeBaroHeights:
+            (m['routeBaroHeights'] as List?)?.map((e) => (e as num?)?.toDouble()).toList() ?? [],
       );
     } catch (e) {
       debugPrint('[Snapshot] 파싱 실패: $e');

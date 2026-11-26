@@ -28,12 +28,27 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
   final MapController _mapController = MapController();
   // 고도 기록이 없거나(2026-11-15 이전 기록) 너무 적으면 null
   ElevationProfile? _elevation;
+  // 기압계 높이로 그렸으면 true (없으면 GPS 고도로 그림)
+  bool _elevationFromBaro = false;
 
   @override
   void initState() {
     super.initState();
     final r = widget.record;
-    if (r.hasRoute && r.routeAltitudes != null) {
+    // 기압계 높이가 있으면 그것을 우선 사용 — GPS 고도보다 잡음이 작아 덜 다듬음.
+    // 반경 2(5점)·1.5m는 임의로 정한 시험값 — 실측 비교 후 조정
+    final baro = r.routeBaroHeights;
+    if (r.hasRoute && baro != null) {
+      _elevation = ElevationProfile.compute(
+        r.routePoints!,
+        baro,
+        totalDistanceKm: r.distanceKm,
+        smoothRadius: 2,
+        climbThresholdM: 1.5,
+      );
+      _elevationFromBaro = _elevation != null;
+    }
+    if (_elevation == null && r.hasRoute && r.routeAltitudes != null) {
       _elevation = ElevationProfile.compute(
         r.routePoints!,
         r.routeAltitudes!,
@@ -283,9 +298,11 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
             child: CustomPaint(painter: _ElevationChartPainter(e)),
           ),
           const SizedBox(height: 10),
-          const Text(
-            '출발 지점을 0m로 본 높이예요. GPS 측정값이라 몇 m 오차가 있을 수 있어요.',
-            style: TextStyle(fontSize: 11, color: Tokens.inkMuted, height: 1.4),
+          Text(
+            _elevationFromBaro
+                ? '출발 지점을 0m로 본 높이예요. 기압계로 잰 값(시험 중)이에요.'
+                : '출발 지점을 0m로 본 높이예요. GPS 측정값이라 몇 m 오차가 있을 수 있어요.',
+            style: const TextStyle(fontSize: 11, color: Tokens.inkMuted, height: 1.4),
           ),
         ],
       ),
